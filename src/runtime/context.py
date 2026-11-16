@@ -7,7 +7,8 @@ from uuid import uuid4
 
 from src.runtime.models import RunContext, RunEntryPoint
 from src.runtime.specs import RuntimeRequest
-from src.runtime.system import DEFAULT_CATALOG_PATH, resolve_system
+from src.runtime.system import DEFAULT_CATALOG_PATH, pin_source_embedding, resolve_system
+from src.runtime.system_store import fingerprint
 from src.runtime.version import code_version
 
 
@@ -23,11 +24,13 @@ def build_v0_run_context(
     system_id: str | None = None,
     system_version: str | None = None,
     draft_revision: int | None = None,
+    retrieval_mode=None,
 ) -> RunContext:
     """Build a run context from one validated system and source snapshot."""
 
     request = RuntimeRequest(question=question, workflow_id=workflow_id, source_id=source_id, source_version=source_version,
-                             system_id=system_id, system_version=system_version, draft_revision=draft_revision)
+                             system_id=system_id, system_version=system_version, draft_revision=draft_revision,
+                             retrieval_mode=retrieval_mode)
     if request.system_id:
         if catalog_path is not None:
             raise ValueError('系统版本运行不能覆盖系统配置文件。')
@@ -47,6 +50,12 @@ def build_v0_run_context(
         catalog_path=catalog_path or os.getenv("MAQA_SYSTEM_CONFIG_PATH") or DEFAULT_CATALOG_PATH,
     )
     first_agent = next(iter(system.agents.values())).config
+    snapshot = system.snapshot()
+    if request.retrieval_mode:
+        snapshot['retrieval_mode'] = request.retrieval_mode
+        if request.retrieval_mode != 'bm25':
+            pin_source_embedding(snapshot['source'], required=True)
+        snapshot['config_sha256'] = fingerprint(snapshot)
 
     return RunContext(
         run_id=run_id or str(uuid4()),
@@ -59,5 +68,5 @@ def build_v0_run_context(
         model_name=first_agent["model_config"]["model_name"],
         protocol_id=system.workflow.protocol_id,
         code_version=code_version(),
-        config_snapshot=system.snapshot(),
+        config_snapshot=snapshot,
     )

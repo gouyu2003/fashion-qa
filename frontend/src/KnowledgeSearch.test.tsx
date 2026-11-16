@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import KnowledgeSearch from './KnowledgeSearch'
 import { searchKnowledge } from './api'
-vi.mock('./api', () => ({ searchKnowledge: vi.fn() }))
+vi.mock('./api', () => ({ searchKnowledge: vi.fn(), getEmbeddingIndex: vi.fn().mockResolvedValue({ status: 'ready' }) }))
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 it('searches the fixed material version and shows literal source locations', async () => {
@@ -14,5 +14,5 @@ it('searches the fixed material version and shows literal source locations', asy
   fireEvent.click(screen.getByRole('button', { name: '检索' }))
   expect(await screen.findByText('会议审批需提交邀请函。')).toBeInTheDocument()
   expect(screen.getByText(/制度.md · 第 3–3 行/)).toBeInTheDocument()
-  expect(searchKnowledge).toHaveBeenCalledWith('s', 2, '材料', 5, expect.any(AbortSignal))
+  expect(searchKnowledge).toHaveBeenCalledWith('s', 2, '材料', 5, expect.any(AbortSignal), 'hybrid')
 })

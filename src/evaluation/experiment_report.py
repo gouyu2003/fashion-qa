@@ -132,6 +132,9 @@ def generate_report(directory, config, records, ledger, attempts, provenance):
                     'Development results cannot serve as untouched test evidence.',
                     'Bootstrap intervals resample questions, not provider/model uncertainty.',
                     'Unknown usage is not zero; interrupted requests may have unreported charges.'])
+    from src.knowledge.embedding import experiment_usage
+    if usage := experiment_usage(directory, rows):
+        report['embedding_usage'] = usage
     if config.price:
         prompt = report['all_attempt_costs']['prompt_tokens']
         output = report['all_attempt_costs']['completion_tokens']

@@ -17,11 +17,12 @@ export function groupDiagnosticCalls(calls: ModelCall[] = []) {
 }
 
 export function TimingDetails({ timings }: { timings?: RunTimings }) {
-  if (!timings?.categories || !Object.keys(timings.categories).length) return <p className="diagnostic-note">耗时拆分未记录。</p>
+  if (!timings || (!timings.embedding && !Object.keys(timings.categories ?? {}).length)) return <p className="diagnostic-note">耗时拆分未记录。</p>
   return <Collapse items={[{ key: 'timing', label: '耗时分析', children: <>
     {timings.task_total_wall_ms != null && <p>任务总耗时：{(timings.task_total_wall_ms/1000).toFixed(3)} 秒（加载至执行与保存结束的观测跨度）</p>}
     {!!timings.cache?.length && <p>知识源缓存：命中 {timings.cache.filter(item => item.cache_hit).length} 次／读取 {timings.cache.length} 次</p>}
-    <Table size="small" pagination={false} rowKey="name" dataSource={Object.entries(timings.categories).map(([name, data]) => ({ name, ...data }))}
+    {timings.embedding && <p>Embedding 请求 {timings.embedding.requests} 次，失败 {timings.embedding.failed_requests} 次，已知输入 Token {timings.embedding.known_input_tokens ?? '未知'}，累计 {(timings.embedding.duration_ms / 1000).toFixed(2)} 秒。</p>}
+    <Table size="small" pagination={false} rowKey="name" dataSource={Object.entries(timings.categories ?? {}).map(([name, data]) => ({ name, ...data }))}
       columns={[{ title: '环节', dataIndex: 'name', render: name => ACTIVITY[name] ?? name },
         { title: '实际经过 / 秒', dataIndex: 'wall_ms', render: value => (value / 1000).toFixed(3) },
         { title: '累计工作 / 秒', dataIndex: 'cumulative_ms', render: value => (value / 1000).toFixed(3) },

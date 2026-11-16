@@ -142,7 +142,7 @@ def job_view(key, data, rows, fingerprint):
                       **{s: counts[s] for s in ('completed', 'failed', 'interrupted', 'cancelled')}),
         report=dict(complete=report['complete'], methods=methods, retry_count=report.get('retry_count', 0),
             latest_attempt_supplement={m: normalize_method(v, {}) for m, v in report.get('latest_attempt_supplement', {}).items()},
-            all_attempt_usage=report.get('all_attempt_costs', {}), research=dict(complete=report['complete'],
+            all_attempt_usage=report.get('all_attempt_costs', {}), embedding_usage=report.get('embedding_usage'), research=dict(complete=report['complete'],
                 primary_metric='f1', reference_method=reference, methods=research_methods, pairs=report['pairs'],
                 reference_pairs=relative_pairs(report['pairs'], reference),
                 bootstrap=dict(seed=report['bootstrap']['seed'], replicates=report['bootstrap']['replicates'],

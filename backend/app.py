@@ -69,7 +69,7 @@ def build_default_run_service() -> RunService:
 
 def build_api_run_context(
     question: str, run_id: str | None = None,
-    *, workflow_id: str | None = None, source_id: str | None = None,
+    *, workflow_id: str | None = None, source_id: str | None = None, retrieval_mode=None,
     source_version: int | None = None,
     system_id: str | None = None, system_version: str | None = None, draft_revision: int | None = None,
 ) -> RunContext:
@@ -81,6 +81,7 @@ def build_api_run_context(
         **({"system_id": system_id, "system_version": system_version, "draft_revision": draft_revision} if system_id else {}),
         run_id=run_id,
         workflow_id=workflow_id,
+        retrieval_mode=retrieval_mode,
         source_id=source_id,
         **({"source_version": source_version} if source_version is not None else {}),
     )
@@ -330,7 +331,8 @@ def stream_question(body: QuestionRequest, request: Request) -> StreamingRespons
 @app.post('/api/v1/qa/runs', status_code=202)
 def submit_question(body: BackgroundQuestionRequest, request: Request):
     manager = request.app.state.interactive
-    fingerprint = request_fingerprint(body.model_dump(exclude={'client_request_id'}))
+    excluded = {'client_request_id'} | ({'retrieval_mode'} if body.retrieval_mode is None else set())
+    fingerprint = request_fingerprint(body.model_dump(exclude=excluded))
     key = body.client_request_id or uuid4().hex
     existing = manager.existing(key, fingerprint)
     if existing:
@@ -342,6 +344,7 @@ def submit_question(body: BackgroundQuestionRequest, request: Request):
         with observer.span('configuration_load'):
             context = build_api_run_context(
                 body.question, run_id=run_id, workflow_id=body.workflow_id, source_id=body.source_id,
+                **({'retrieval_mode': body.retrieval_mode} if body.retrieval_mode is not None else {}),
                 **({'system_id': body.system_id, 'system_version': body.system_version, 'draft_revision': body.draft_revision} if body.system_id else {}),
                 **({'source_version': body.source_version} if body.source_version is not None else {}))
     except SystemFailure as exc:

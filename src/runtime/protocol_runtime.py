@@ -116,11 +116,14 @@ def execute_phase(stage, agent_id, config, source, input_data, usage):
     if stage.kind == 'lead':
         from src.runtime.protocol_agents import lead_decision
         return lead_decision(config, input_data, usage)
+    if stage.kind in ('propose', 'dispatch', 'critique', 'revise', 'answer', 'retrieve'):
+        retriever = retriever_from_snapshot({'source': source, 'retrieval_mode': source.get('retrieval_mode')},
+                                            remaining=usage.after_invoke if usage else None)
     if stage.kind in ('propose', 'dispatch', 'critique', 'revise', 'answer'):
         task = input_data['task']
         if stage.kind == 'dispatch':
             local['sub_questions'] = [dict(id=task['task_id'], question=task['instruction'], keywords=[], depends_on=[])]
-        retrieval = retriever_fn(local, retriever=retriever_from_snapshot({'source': source}), agent_config=config)
+        retrieval = retriever_fn(local, retriever=retriever, agent_config=config)
         own = evidence_ids(retrieval['evidence_chunks'])
         local = local_state(input_data['question'], input_data['reads'] + [dict(kind='retrieve', call_id='local', output={'evidence_chunks': own})], stage.share_evidence)
         # Own retrieved evidence is always visible even when peer sharing is off.
@@ -141,7 +144,7 @@ def execute_phase(stage, agent_id, config, source, input_data, usage):
     if stage.kind == 'retrieve':
         if stage.instructions:
             local['sub_questions'] = [{**sq, 'keywords': [*sq.get('keywords', []), stage.instructions]} for sq in local['sub_questions']]
-        result = retriever_fn(local, retriever=retriever_from_snapshot({'source': source}), agent_config=config)
+        result = retriever_fn(local, retriever=retriever, agent_config=config)
         result['evidence_chunks'] = evidence_ids(result['evidence_chunks'])
         result['retrieved_evidence_chunks'] = deepcopy(result['evidence_chunks'])
         return result
@@ -217,7 +220,10 @@ def build_protocol_graph(context, usage):
             child.invoke_adapter = lambda chat, prompt: chat.invoke(prompt, timeout=remaining())
             with usage.running_node(), observe('node', **{k: v for k, v in metadata.items() if k != 'kind'}):
                 try:
-                    result = execute_phase(stage, agent_id, config, snapshot.get('sources', {}).get(agent_id), input_data, child)
+                    source = snapshot.get('sources', {}).get(agent_id)
+                    if source is not None and snapshot.get('retrieval_mode'):
+                        source = {**source, 'retrieval_mode': snapshot['retrieval_mode']}
+                    result = execute_phase(stage, agent_id, config, source, input_data, child)
                     if v2 and stage.kind in ('plan', 'retrieve', 'review'): result.update(counters)
                     guard.check()
                     if monotonic() - start > spec.limits.node_timeout_seconds:

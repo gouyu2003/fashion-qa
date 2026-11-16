@@ -22,6 +22,10 @@ DEFAULT_ROOT = Path(__file__).resolve().parents[2] / "data" / "knowledge"
 _cache_loaded = ContextVar('knowledge_cache_loaded', default=False)
 
 
+def embedding_root() -> Path:
+    return Path(os.getenv("MAQA_KNOWLEDGE_DIR") or DEFAULT_ROOT).resolve() / "embeddings"
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

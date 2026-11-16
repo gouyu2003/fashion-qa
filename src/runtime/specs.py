@@ -96,8 +96,12 @@ class WorkflowSpec(StrictSpec):
         return self
 
 
+from src.knowledge.embedding import RetrievalMode
+
+
 class RuntimeRequest(StrictSpec):
     question: str = Field(min_length=1, max_length=2000)
+    retrieval_mode: RetrievalMode | None = None
     workflow_id: str | None = Field(default=None, min_length=1)
     source_id: str | None = Field(default=None, min_length=1)
     source_version: StrictInt | None = Field(default=None, ge=1)
@@ -110,7 +114,7 @@ class RuntimeRequest(StrictSpec):
         if self.system_id:
             if (self.system_version is None) == (self.draft_revision is None):
                 raise ValueError('指定系统时请选择发布版本或草稿修订号。')
-            if any(v is not None for v in (self.workflow_id, self.source_id, self.source_version)):
+            if any(v is not None for v in (self.workflow_id, self.source_id, self.source_version, self.retrieval_mode)):
                 raise ValueError('系统版本运行不能覆盖流程或知识源。')
         elif self.system_version is not None or self.draft_revision is not None:
             raise ValueError('必须同时指定 system_id。')

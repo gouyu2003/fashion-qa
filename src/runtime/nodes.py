@@ -66,7 +66,7 @@ def _planner(config, source, usage, snapshot, key):
 
 
 def _retriever(config, source, usage, snapshot, key):
-    return partial(retriever_fn, agent_config=config, retriever=retriever_from_snapshot({'source': source}))
+    return partial(retriever_fn, agent_config=config, retriever=retriever_from_snapshot(snapshot, key))
 
 
 def _validator(config, source, usage, snapshot, key):
@@ -78,7 +78,7 @@ def _validator(config, source, usage, snapshot, key):
 
 def _expert(config, source, usage, snapshot, key):
     return partial(expert_node, agent_id=key, config=config, usage=usage,
-        retriever=retriever_from_snapshot({'source': source}),
+        retriever=retriever_from_snapshot(snapshot, key),
         solo=snapshot['workflow_spec']['protocol_id'] == 'single_expert')
 
 

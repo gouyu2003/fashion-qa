@@ -20,7 +20,8 @@ from pydantic import ValidationError
 
 from src.evaluation.experiment_config import ROOT, ExperimentConfig, load_config, read_json, atomic_json, digest
 from src.evaluation.experiment_data import prepare_data, selected_data
-from src.evaluation.experiment_methods import method_definition, build_context
+from src.evaluation.experiment_methods import method_definition, build_context, embedding_batch_estimate
+from src.knowledge.embedding import EmbeddingError
 from src.evaluation.experiment_scores import score_detail
 from src.evaluation.experiment_store import Ledger, experiment_lock, utcnow
 from src.evaluation.experiment_report import generate_report
@@ -47,6 +48,8 @@ def provider_identity():
 
 
 def preflight(config):
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / '.env')
     records, manifest = selected_data(config)
     definitions = {m: method_definition(config, m) for m in config.methods}
     return dict(purpose=config.purpose, samples=len(records), methods=config.methods, repeats=config.repeats,
@@ -54,7 +57,9 @@ def preflight(config):
                 model=config.model.model_dump(), limits=config.limits.model_dump(),
                 reservation_note='UTF-8 byte estimate + maximum outputs; not actual tokens or a billing cap',
                 dataset_sha256=manifest['dataset_sha256'], output=config.output,
-                method_hashes={m: d['sha256'] for m, d in definitions.items()}, model_calls=0)
+                method_hashes={m: d['sha256'] for m, d in definitions.items()}, model_calls=0,
+                retrieval_mode=config.effective_retrieval_mode,
+                embedding_build=embedding_batch_estimate(records) if config.effective_retrieval_mode != 'bm25' else None)
 
 
 def archive_source(directory):
@@ -74,11 +79,11 @@ def initialize(directory, config, records, manifest, definitions, provider):
     existing = [p.name for p in directory.iterdir() if p.name != '.execution.lock']
     if existing:
         raise ValueError('Output already exists; use resume or a new output directory')
-    atomic_json(directory / 'config.resolved.json', config.model_dump())
+    atomic_json(directory / 'config.resolved.json', config.frozen_config())
     atomic_json(directory / 'manifest.json', manifest)
     for method, definition in definitions.items(): atomic_json(directory / 'methods' / f'{method}.json', definition)
     provenance = dict(created_at=utcnow(), identity=identity(), code_version=code_version(),
-                      config_sha256=digest(config.model_dump()), manifest_sha256=digest(manifest),
+                      config_sha256=digest(config.frozen_config()), manifest_sha256=digest(manifest),
                       method_hashes={m: digest(d) for m, d in definitions.items()},
                       source_archive_sha256=archive_source(directory), provider_sha256=provider,
                       execution='offline_test' if provider == 'offline_test' else 'real_model',
@@ -95,7 +100,7 @@ def load_frozen(directory, *, for_execution=False, provider=None):
     directory = Path(directory).resolve()
     provenance = read_json(directory / 'provenance.json')
     config = ExperimentConfig.model_validate(read_json(directory / 'config.resolved.json'))
-    if digest(config.model_dump()) != provenance['config_sha256'] or Path(config.output).resolve() != directory:
+    if digest(config.frozen_config()) != provenance['config_sha256'] or Path(config.output).resolve() != directory:
         raise ValueError('Frozen config or experiment location changed; start a new experiment')
     records, manifest = selected_data(config)
     if digest(manifest) != provenance['manifest_sha256'] or read_json(directory / 'manifest.json') != manifest:
@@ -190,8 +195,12 @@ def execute(config=None, *, directory=None, allow_model_calls=False, retry_statu
                 attempts = ledger.attempts(task['task_id'])
                 if attempts and attempts[-1]['status'] not in retry_status: continue
                 run_id = str(uuid4())
-                context = build_context(definitions[task['method_id']], index[task['sample_id']],
-                                        directory, directory.name, run_id, provenance['code_version'])
+                try:
+                    context = build_context(definitions[task['method_id']], index[task['sample_id']],
+                                            directory, directory.name, run_id, provenance['code_version'])
+                except EmbeddingError as exc:
+                    print(f'向量索引准备失败，可用 resume 继续：{exc}', file=sys.stderr)
+                    break
                 number = ledger.start(task, run_id)
                 try:
                     detail = service.run(context)

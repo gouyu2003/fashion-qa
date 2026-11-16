@@ -94,6 +94,7 @@ def read_observations(database, run_id, *, immutable=False):
 
 
 def summarize_timings(records):
+    requests = [record for record in records if record['kind'] == 'embedding_request']
     spans = [r for r in records if r['kind'] == 'activity_finished']
     categories = {}
     for name in sorted({r['name'] for r in spans}):
@@ -106,9 +107,13 @@ def summarize_timings(records):
             end = max(end, right)
         categories[name] = {'wall_ms': union, 'cumulative_ms': sum(r['duration_ms'] for r in own), 'count': len(own)}
     task_total = max(r['offset_ms']+r['duration_ms'] for r in spans)-min(r['offset_ms'] for r in spans) if spans else None
-    return {'categories': categories, 'spans': spans, 'task_total_wall_ms': task_total,
-            'cache': [r for r in records if r['kind'] == 'cache_lookup'],
-            'note': '同类区间合并计算经过时间；不同类别可能嵌套，不可相加。'} if spans else {}
+    result = {'categories': categories, 'spans': spans, 'task_total_wall_ms': task_total,
+              'cache': [r for r in records if r['kind'] == 'cache_lookup'],
+              'note': '同类区间合并计算经过时间；不同类别可能嵌套，不可相加。'} if spans else {}
+    if requests:
+        from src.knowledge.embedding import summarize_usage
+        result['embedding'] = summarize_usage(requests)
+    return result
 
 
 def activity_snapshot(records):

@@ -10,7 +10,7 @@ import type {
   KnowledgeSource,
   ChunkPage,
   ExperimentOption,
-  ManagedSystem, SystemDocument, SystemDraftFields, RunSelection,
+  ManagedSystem, SystemDocument, SystemDraftFields, RunSelection, RetrievalMode,
   AgentTemplate,
 } from './types'
 
@@ -195,7 +195,8 @@ export async function streamLegacyQuestion(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question, workflow_id: selection?.workflowId, source_id: selection?.sourceId, source_version: selection?.sourceVersion,
-      system_id: selection?.systemId, system_version: selection?.systemVersion, draft_revision: selection?.draftRevision }),
+      system_id: selection?.systemId, system_version: selection?.systemVersion, draft_revision: selection?.draftRevision,
+      retrieval_mode: selection?.retrievalMode }),
     signal,
   })
 
@@ -316,7 +317,8 @@ export async function resumeBackgroundRun(pending: PendingRun, onEvent: (event: 
         method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: pending.question, client_request_id: pending.clientRequestId,
           workflow_id: selection?.workflowId, source_id: selection?.sourceId, source_version: selection?.sourceVersion,
-          system_id: selection?.systemId, system_version: selection?.systemVersion, draft_revision: selection?.draftRevision }),
+          system_id: selection?.systemId, system_version: selection?.systemVersion, draft_revision: selection?.draftRevision,
+          retrieval_mode: selection?.retrievalMode }),
       })
       pending = { ...pending, runId: response.run_id }
       savePending(pending)
@@ -338,10 +340,26 @@ export async function streamQuestion(question: string, onEvent: (event: StreamEv
   savePending(pending)
   await resumeBackgroundRun(pending, onEvent, signal)
 }
+export interface EmbeddingIndexStatus { status: 'missing' | 'building' | 'ready' | 'failed'; error?: string }
+
+export function getEmbeddingIndex(sourceId: string, version?: number, signal?: AbortSignal): Promise<EmbeddingIndexStatus> {
+  const params = new URLSearchParams({ source_id: sourceId })
+  if (version !== undefined) params.set('source_version', String(version))
+  return knowledgeJson(`${API_PREFIX}/knowledge/embedding-index?${params}`, { signal })
+}
+
+export function buildEmbeddingIndex(sourceId: string, version?: number): Promise<EmbeddingIndexStatus> {
+  return knowledgeJson(`${API_PREFIX}/knowledge/embedding-index`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source_id: sourceId, source_version: version }),
+  })
+}
+
 export interface SearchResults { query: string; source_id: string; version: number; index_version: string; tokenizer: string; top_k: number;
+  retrieval_mode?: RetrievalMode; score_type?: string;
   items: { chunk_id?: string; text: string; filename?: string; source_title: string; line_start?: number; line_end?: number; relevance_score: number }[] }
-export function searchKnowledge(sourceId: string, version: number, query: string, topK: number, signal?: AbortSignal): Promise<SearchResults> {
+export function searchKnowledge(sourceId: string, version: number, query: string, topK: number, signal?: AbortSignal, mode?: RetrievalMode): Promise<SearchResults> {
   return knowledgeJson(`${API_PREFIX}/knowledge/sources/${encodeURIComponent(sourceId)}/versions/${version}/search`, {
-    method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, top_k: topK }),
+    method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, top_k: topK, retrieval_mode: mode }),
   })
 }

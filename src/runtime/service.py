@@ -115,6 +115,9 @@ def _public_mapping(value: Any, allowed: tuple[str, ...]) -> dict[str, Any]:
 
 
 def _public_error(exc: Exception) -> RunError:
+    from src.knowledge.embedding import EmbeddingError
+    if isinstance(exc, EmbeddingError):
+        return RunError(error_type=exc.code, message=str(exc))
     from src.runtime.chat_context import ContextResolutionError
     if isinstance(exc, ContextResolutionError):
         return RunError(error_type='chat_context_error', message=str(exc))

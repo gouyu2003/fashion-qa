@@ -90,6 +90,8 @@ export default function EvaluationReview({ job, base, onOpenDetail, mode = 'all'
         { title: '对象', dataIndex: 'method', render: name }, { title: '最新尝试完成', render: (_, r) => r.statuses.completed },
         { title: '最新尝试失败', render: (_, r) => r.statuses.failed }, { title: '最新 F1（补充）', render: (_, r) => r.scores.f1?.value == null ? '未知' : `${(r.scores.f1.value * 100).toFixed(1)}%` },
       ]} />
+      {job.report?.embedding_usage && Object.entries(job.report.embedding_usage).map(([kind, usage]) => usage &&
+        <p key={kind}>Embedding {kind === 'document_builds' ? '构建' : '查询'}请求 {usage.requests} 次，失败 {usage.failed_requests} 次，已知输入 Token {usage.known_input_tokens ?? '未知'}，累计 {(usage.duration_ms / 1000).toFixed(2)} 秒。</p>)}
       <p>所有尝试已知 Token：{job.report?.all_attempt_usage?.total_tokens?.reported_total ?? '未知'}；所有尝试模型调用：{job.report?.all_attempt_usage?.llm_call_count?.reported_total ?? '未知'}。汇总来自最近生成的报告。</p>
     </> }]} />}
     <h3>逐题结果审阅</h3>

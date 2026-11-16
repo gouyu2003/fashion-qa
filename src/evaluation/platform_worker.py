@@ -35,6 +35,7 @@ from src.runtime.models import RunContext
 from src.runtime.service import RunService
 from src.runtime.sqlite_repository import SQLiteRunRepository
 from src.runtime.version import code_version
+from src.knowledge.embedding import EmbeddingError, experiment_usage
 from src.model_errors import request_errors
 from src.observability import diagnostic_codes
 
@@ -133,7 +134,7 @@ def start_job(store, job_id, *, allow_model_calls, retry_failed=False):
         command.append('--retry-failed')
     kwargs = dict(cwd=str(ROOT), stdin=subprocess.DEVNULL, close_fds=True)
     if os.name == 'nt':
-        kwargs['creationflags'] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
     else:
         kwargs['start_new_session'] = True
     try:
@@ -217,6 +218,8 @@ def report(store, job_id, frozen, ledger, repository):
                                               for m in frozen['definitions']},
                    all_attempt_usage=aggregate(rows, len(rows), labelled)['usage'])
     directory = store.job_directory(job_id)
+    if usage := experiment_usage(directory, rows):
+        summary['embedding_usage'] = usage
     if frozen['schema_version'] >= 2:
         from src.evaluation.platform_reports import research_report
         summary['research'] = research_report(frozen, primary, aggregate, directory)
@@ -283,7 +286,11 @@ def _execute(store, job_id, *, retry_failed=False, service_factory=None, heartbe
                 record = records[task['sample_id']]
                 run_id = uuid4().hex
                 if frozen['request']['context_mode'] == 'question_context':
-                    context = build_context(definition, record, directory, job_id, run_id, code_version())
+                    try:
+                        context = build_context(definition, record, directory, job_id, run_id, code_version())
+                    except EmbeddingError as exc:
+                        store.state(job_id, 'paused', str(exc))
+                        break
                 else:
                     snapshot = deepcopy(definition['snapshot'])
                     model = next(a['model_config']['model_name'] for a in snapshot['agents'].values() if a.get('model_config'))

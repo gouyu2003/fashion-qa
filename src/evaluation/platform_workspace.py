@@ -34,7 +34,8 @@ def save_plan(store, fields):
         raise EvaluationFailure('请提供方案名称，并选择当前配置或一个既有任务。')
     payload = fields.request if fields.request is not None else store.frozen(fields.source_job_id)[1]['request']
     try:
-        request = JobRequest.model_validate(payload).model_dump(exclude={'preflight_token', 'saved_plan_id'})
+        omitted = {'preflight_token', 'saved_plan_id'} | ({'retrieval_mode'} if not payload.get('retrieval_mode') else set())
+        request = JobRequest.model_validate(payload).model_dump(exclude=omitted)
     except ValidationError as exc:
         raise EvaluationFailure('方案格式不兼容，请使用平台导出的实验方案 JSON。') from exc
     sha = digest(request)

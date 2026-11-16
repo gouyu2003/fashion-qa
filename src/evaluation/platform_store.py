@@ -16,9 +16,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.evaluation.experiment import identity
 from src.evaluation.experiment_config import ROOT, ExperimentConfig, ExperimentLimits, ModelConfig, digest
-from src.evaluation.experiment_methods import method_definition
+from src.evaluation.experiment_methods import method_definition, configure_batch_retrieval, embedding_batch_estimate
 from src.evaluation.experiment_store import utcnow
 from src.knowledge.hotpotqa_context import runtime_input
+from src.knowledge.embedding import EmbeddingError, RetrievalMode
 from src.runtime.system_store import SystemStore, fingerprint
 
 
@@ -73,6 +74,7 @@ class JobRequest(BaseModel):
     saved_plan_id: str | None = None
     copied_from_job_id: str | None = None
     context_mode: Literal['question_context', 'system_sources'] = 'question_context'
+    retrieval_mode: RetrievalMode | None = None
     sample_size: int | None = Field(default=None, ge=1, le=10000, strict=True)
     seed: int = Field(default=42, strict=True)
     repeats: int = Field(default=1, ge=1, le=100, strict=True)
@@ -88,6 +90,12 @@ class JobRequest(BaseModel):
     primary_metric: Literal['em', 'f1', 'sp_em', 'sp_f1', 'joint_em', 'joint_f1'] = 'f1'
     bootstrap_samples: int = Field(default=2000, ge=100, le=10000, strict=True)
     reference_index: int | None = Field(default=None, ge=0, strict=True)
+
+    @model_validator(mode='after')
+    def retrieval_source(self):
+        if self.context_mode == 'system_sources' and self.retrieval_mode is not None:
+            raise ValueError('使用系统绑定材料时，检索模式由发布版本决定。')
+        return self
 
 
 def validate_questions(value):
@@ -164,6 +172,10 @@ def freeze_materials(snapshot, directory):
             path = directory / f'{source[hash_key]}.json'
             copy_checked(source[path_key], path, source[hash_key])
             local[path_key] = str(path.resolve())
+        if (index := local.get('embedding_index')) is not None:
+            path = directory / f"{index['vector_sha256']}.npy"
+            copy_checked(index['vector_path'], path, index['vector_sha256'])
+            index['vector_path'] = str(path.resolve())
         for document in source.get('files', []):
             name = document['original_name']
             if Path(name).name != name or '/' in name or '\\' in name:
@@ -316,12 +328,20 @@ class EvaluationStore:
                                   snapshot=snapshot, source=dict(kind='published_system', system_id=target.system_id,
                                   version=target.version, original_sha256=original, model_override=fields.model is not None))
                 definition['sha256'] = digest(definition)
+            if fields.context_mode == 'question_context' and (fields.retrieval_mode or definition['snapshot'].get('retrieval_mode')):
+                try:
+                    configure_batch_retrieval(definition['snapshot'], fields.retrieval_mode or 'bm25', fields.top_k)
+                except EmbeddingError as exc:
+                    raise EvaluationFailure(str(exc)) from exc
+                definition['snapshot']['config_sha256'] = fingerprint(definition['snapshot'])
+                definition['sha256'] = digest({k: v for k, v in definition.items() if k != 'sha256'})
             definitions[definition['method_id']] = definition
         if fields.reference_index is not None and fields.reference_index >= len(definitions):
             raise EvaluationFailure('比较基准不在所选对象中。')
         reference = list(definitions)[fields.reference_index] if fields.reference_index is not None else (
             'single_rag' if 'single_rag' in definitions else next(iter(definitions)))
-        frozen = dict(schema_version=2, request=fields.model_dump(exclude={'preflight_token'}), manifest=manifest,
+        omitted = {'preflight_token'} | ({'retrieval_mode'} if not fields.retrieval_mode else set())
+        frozen = dict(schema_version=2, request=fields.model_dump(exclude=omitted), manifest=manifest,
                       reference_method=reference, bank={k: v for k, v in bank.items() if k != 'records'},
                       records=records, definitions=definitions, identity=identity(), repeats=fields.repeats,
                       planned_tasks=len(records) * len(definitions) * fields.repeats)
@@ -334,9 +354,12 @@ class EvaluationStore:
         return dict(token=digest(frozen), planned_tasks=frozen['planned_tasks'], sample_count=len(frozen['records']),
                     data_sha256=digest(frozen['records']), purpose=fields.purpose,
                     manifest=frozen['manifest'], request=frozen['request'], reference_method=frozen['reference_method'],
+                    embedding_build=embedding_batch_estimate(frozen['records'])
+                        if fields.context_mode == 'question_context' and fields.retrieval_mode in ('embedding', 'hybrid') else None,
                     targets=[dict(method_id=k, label=d['label'], source=d['source'],
                         models=[dict(agent_id=key, model=a.get('model_config'),
                                      retrieval=a.get('retrieval_config')) for key, a in d['snapshot']['agents'].items()],
+                        retrieval_mode=d['snapshot'].get('retrieval_mode', 'bm25'),
                         workflow=d['snapshot'].get('workflow_spec'),
                         limits=d['snapshot'].get('protocol_document', {}).get('spec', {}).get('limits'),
                         sha256=d['sha256']) for k, d in frozen['definitions'].items()], model_calls=0)
@@ -432,7 +455,9 @@ class EvaluationStore:
             archived = db.execute('SELECT archived FROM job_catalog WHERE job_id=?', (job_id,)).fetchone()
         return dict(job_id=job_id, name=row['name'], status=row['status'], created_at=row['created_at'], archived=bool(archived and archived[0]),
                     updated_at=row['updated_at'], error=row['error'], bank=frozen['bank'],
-                    targets=[dict(method_id=k, label=v['label'], source=v['source']) for k, v in frozen['definitions'].items()],
+                    targets=[dict(method_id=k, label=v['label'], source=v['source'],
+                                  retrieval_mode=v['snapshot'].get('retrieval_mode', 'bm25'))
+                             for k, v in frozen['definitions'].items()],
                     context_mode=frozen['request']['context_mode'], model_override=frozen['request']['model'],
                     repeats=frozen['repeats'], sample_count=len(frozen['records']), progress=progress,
                     fingerprint=frozen['sha256'], report=report, retryable_count=self.retryable_count(job_id),

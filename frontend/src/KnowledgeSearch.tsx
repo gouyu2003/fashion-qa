@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Empty, Input, Select } from 'antd'
 import { searchKnowledge } from './api'
 import type { SearchResults } from './api'
+import { EmbeddingIndexControl, RetrievalMode } from './RetrievalMode'
+import type { RetrievalMode as Mode } from './types'
 
 export default function KnowledgeSearch({ sourceId, version }: { sourceId: string; version: number }) {
   const [query, setQuery] = useState('')
   const [topK, setTopK] = useState(5)
+  const [mode, setMode] = useState<Mode>('hybrid')
   const [result, setResult] = useState<SearchResults>()
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -16,13 +19,15 @@ export default function KnowledgeSearch({ sourceId, version }: { sourceId: strin
     const request = new AbortController()
     controller.current = request
     setBusy(true); setError(''); setResult(undefined)
-    try { setResult(await searchKnowledge(sourceId, version, query.trim(), topK, request.signal)) }
+    try { setResult(await searchKnowledge(sourceId, version, query.trim(), topK, request.signal, mode)) }
     catch (reason) { if (!request.signal.aborted) setError(reason instanceof Error ? reason.message : '检索失败，请重试。') }
     finally { if (!request.signal.aborted) setBusy(false) }
   }
   return <section className="knowledge-search" aria-label="检索试查">
     <h3>检索试查</h3>
-    <p className="diagnostic-note">只检索当前材料版本，不调用模型。相关性分数用于排序，不表示答案正确的概率。</p>
+    <p className="diagnostic-note">检索当前材料版本。向量模式会将检索问题发送至百炼。</p>
+    <RetrievalMode value={mode} disabled={busy} onChange={value => { setMode(value); setResult(undefined); setError('') }} />
+    {mode !== 'bm25' && <EmbeddingIndexControl sourceId={sourceId} version={version} />}
     <form onSubmit={event => { event.preventDefault(); if (query.trim() && !busy) void search() }}>
       <Input aria-label="检索问题" placeholder="输入中文、英文或混合问题" maxLength={2000} value={query} onChange={event => setQuery(event.target.value)} />
       <Select aria-label="返回片段数" value={topK} onChange={setTopK} options={[3, 5, 10, 20].map(value => ({ value, label: `前 ${value} 条` }))} />
@@ -30,8 +35,8 @@ export default function KnowledgeSearch({ sourceId, version }: { sourceId: strin
     </form>
     {error && <Alert type="error" title="检索失败" description={error} />}
     {result && <>
-      <p>版本 {result.version} · 索引 {result.index_version} · 命中 {result.items.length} 条</p>
-      {!result.items.length && <Empty description="没有匹配片段，可调整问题中的关键词。" />}
+      <p>版本 {result.version} · {result.retrieval_mode ?? mode} · {result.score_type ?? 'BM25'} 排序 · 命中 {result.items.length} 条</p>
+      {!result.items.length && <Empty description="没有匹配片段，可调整检索问题。" />}
       {result.items.map((item, index) => <article className="knowledge-chunk" key={item.chunk_id ?? index}>
         <strong>#{index+1} · {item.filename ?? item.source_title}{item.line_start != null ? ` · 第 ${item.line_start}–${item.line_end} 行` : ''}</strong>
         <small>相关性 {item.relevance_score.toPrecision(4)}</small><p>{item.text}</p>

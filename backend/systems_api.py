@@ -1,6 +1,7 @@
 """Local workspace system management, deliberately without config JSON editing."""
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
+from src.knowledge.embedding import RetrievalMode
 from src.runtime.instances import AgentInstance, ExecutionMode, templates
 from src.runtime.protocols import ProtocolRef
 
@@ -16,6 +17,7 @@ class DraftFields(BaseModel):
     source_version: int | None = Field(default=None, ge=1, strict=True)
     agents: list[AgentInstance] | None = Field(default=None, min_length=1, max_length=5)
     execution_mode: ExecutionMode | None = None
+    retrieval_mode: RetrievalMode | None = None
     protocol_ref: ProtocolRef | None = None
     protocol_bindings: dict[str, list[str]] = Field(default_factory=dict)
 

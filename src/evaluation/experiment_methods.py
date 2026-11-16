@@ -5,7 +5,9 @@ from copy import deepcopy
 from pathlib import Path
 import sqlite3
 
-from src.evaluation.experiment_config import digest, atomic_json
+from src.evaluation.experiment_config import digest, atomic_json, read_json
+from src.knowledge.embedding import EmbeddingError, load_index, prepare_index, profile
+from src.runtime.system import lexical_retriever
 from src.evaluation.hotpotqa import sha256_file
 from src.knowledge.hotpotqa_context import runtime_input
 from src.runtime.instances import templates, validate_instances, agent_config
@@ -105,9 +107,33 @@ def method_definition(config, method):
                     protocol_bindings=bindings, protocol_plan=compile_protocol(spec, bindings, instances),
                     protocol={'protocol_name': method}, execution_mode=config.execution_mode,
                     configuration_errors=[])
+    if config.schema_version == 2:
+        configure_batch_retrieval(snapshot, config.effective_retrieval_mode, config.top_k)
     result = {'method_id': method, 'adapter_version': ADAPTER_VERSION, 'source': source, 'snapshot': snapshot}
     result['sha256'] = digest(result)
     return result
+
+
+def configure_batch_retrieval(snapshot, mode, top_k):
+    snapshot['retrieval_mode'] = mode
+    if mode != 'bm25':
+        snapshot['embedding_profile'] = profile()
+    else:
+        snapshot.pop('embedding_profile', None)
+    for instance in snapshot.get('instances', []):
+        if instance['agent_type'] in ('expert', 'retriever'):
+            instance['top_k'] = top_k
+    for agent in snapshot['agents'].values():
+        if agent.get('role') in ('expert', 'retriever'):
+            agent.setdefault('retrieval_config', {})['top_k'] = top_k
+
+
+def embedding_batch_estimate(records):
+    from src.knowledge.embedding import BATCH_SIZE
+    corpora = {digest(record['context']): sum(len(sentences) for _, sentences in record['context'])
+               for record in records}
+    return {'unique_corpora': len(corpora), 'document_inputs': sum(corpora.values()),
+            'max_document_requests': sum((count + BATCH_SIZE - 1) // BATCH_SIZE for count in corpora.values())}
 
 
 def build_context(definition, record, directory, experiment_id, run_id, code_id):
@@ -118,6 +144,17 @@ def build_context(definition, record, directory, experiment_id, run_id, code_id)
     source_id = 'sample_' + digest(public['_id'])[:24]
     source = dict(source_id=source_id, source_type='hotpotqa_context', resolved_path=str(path.resolve()),
                   sha256=sha256_file(path), name='Isolated HotpotQA context')
+    if snapshot.get('retrieval_mode', 'bm25') != 'bm25':
+        if snapshot['embedding_profile'] != profile():
+            raise EmbeddingError('embedding_configuration_changed', '百炼向量服务配置已变化，请新建实验。')
+        lexical = lexical_retriever(source)
+        pinned = path.with_suffix('.embedding.json')
+        if pinned.is_file():
+            source['embedding_index'] = read_json(pinned)
+            load_index(lexical, source['embedding_index'])
+        else:
+            source['embedding_index'] = prepare_index(Path(directory) / 'embeddings', lexical)
+            atomic_json(pinned, source['embedding_index'])
     snapshot['sources'] = {}
     for instance in snapshot.get('instances', []):
         if instance['agent_type'] in ('expert', 'retriever'):

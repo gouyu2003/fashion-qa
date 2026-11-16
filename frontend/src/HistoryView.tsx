@@ -255,6 +255,7 @@ export function RunDetailPanel({ detail, experimentName }: { detail: StoredRunDe
         {systemLabel(snapshot) ? <><div><span>所属问答系统</span><strong>{systemLabel(snapshot)}</strong></div><div><span>系统 ID</span><code>{String(asObject(snapshot.system_ref).system_id)}</code></div></> : null}
         <div><span>协作流程</span><strong>{run.context.workflow_id}</strong></div>
         <div><span>方法</span><strong>{run.context.method_id}</strong></div>
+        <div><span>检索模式</span><strong>{String(snapshot.retrieval_mode ?? 'bm25')}</strong></div>
         <div><span>知识源</span><strong>{sourceName || sourceId || (Object.keys(asObject(snapshot.sources)).length ? '多个固定知识源' : '未记录')}</strong></div>
         {sourceId ? <div><span>知识源 ID</span><code>{sourceId}</code></div> : null}
         {typeof sourceSnapshot.version === 'number' ? <div><span>知识源版本</span><strong>{sourceSnapshot.version}</strong></div> : null}

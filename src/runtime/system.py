@@ -13,7 +13,8 @@ from src.knowledge.bm25_retriever import BM25Retriever
 from src.knowledge.hotpotqa_loader import load_fixture
 from src.knowledge.hotpotqa_context import load_context
 from src.knowledge.corpus import load_corpus, corpus_retriever
-from src.knowledge.store import KnowledgeStore, retriever_from_corpus_snapshot
+from src.knowledge.store import KnowledgeStore, embedding_root, retriever_from_corpus_snapshot
+from src.knowledge.embedding import EmbeddingError, VectorRetriever, find_index, load_index
 from src.runtime.specs import AgentSpec, KnowledgeSourceSpec, WorkflowSpec
 from src.agents.retriever import configured_top_k
 
@@ -221,8 +222,7 @@ def resolve_system(
     )
 
 
-def retriever_from_snapshot(snapshot: dict[str, Any]) -> BM25Retriever:
-    source = snapshot["source"]
+def lexical_retriever(source: dict[str, Any]) -> BM25Retriever:
     if source["source_type"] == "document_corpus":
         return retriever_from_corpus_snapshot(source)
     factory = RETRIEVER_FACTORIES.get(source["source_type"])
@@ -232,3 +232,27 @@ def retriever_from_snapshot(snapshot: dict[str, Any]) -> BM25Retriever:
     if _sha256(path) != source["sha256"]:
         raise ValueError(f"知识源内容在运行开始前发生变化: {source['source_id']}")
     return factory(SOURCE_LOADERS[source["source_type"]](path), source["source_id"])
+
+
+def retriever_from_snapshot(snapshot, agent_id=None, *, remaining=None):
+    source = snapshot.get('sources', {}).get(agent_id) if agent_id else snapshot['source']
+    lexical = lexical_retriever(source)
+    mode = snapshot.get('retrieval_mode') or 'bm25'
+    if mode == 'bm25':
+        return lexical
+    index = source.get('embedding_index')
+    return VectorRetriever(lexical, load_index(lexical, index), mode, remaining)
+
+
+def pin_source_embedding(source, *, required=False):
+    try:
+        index = find_index(embedding_root(), lexical_retriever(source))
+    except EmbeddingError:
+        if required:
+            raise
+        index = None
+    source.pop('embedding_index', None)
+    if index:
+        source['embedding_index'] = index
+    elif required:
+        raise EmbeddingError('embedding_index_missing', '请为所选知识源版本构建向量索引。')

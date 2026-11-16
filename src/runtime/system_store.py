@@ -11,7 +11,7 @@ from pathlib import Path
 import sqlite3
 from uuid import uuid4
 
-from src.runtime.system import DEFAULT_CATALOG_PATH, resolve_system, retriever_from_snapshot
+from src.runtime.system import DEFAULT_CATALOG_PATH, pin_source_embedding, resolve_system, retriever_from_snapshot
 from src.runtime.specs import WorkflowSpec
 from src.runtime.instances import (validate_instances, legacy_instances, compile_workflow,
                                    agent_config, TEMPLATE_NAMES)
@@ -33,6 +33,18 @@ def template_snapshot(*args, **kwargs):
 def fingerprint(snapshot: dict) -> str:
     body = {k: v for k, v in snapshot.items() if k not in {'config_sha256', 'system_ref'}}
     return hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def _configure_retrieval(snapshot, mode):
+    if not mode:
+        return
+    snapshot['retrieval_mode'] = mode
+    for source in (snapshot.get('sources') or {'single': snapshot.get('source')}).values():
+        if source:
+            if mode == 'bm25':
+                source.pop('embedding_index', None)
+            else:
+                pin_source_embedding(source)
 
 
 class SystemStore:
@@ -111,6 +123,7 @@ class SystemStore:
         else:
             base.pop('source', None)
             base.pop('dataset', None)
+        _configure_retrieval(base, fields.get('retrieval_mode') or base.get('retrieval_mode'))
         base.pop('system_ref', None)
         base['system_id'] = system_id
         base['system_version'] = 'draft'
@@ -181,6 +194,7 @@ class SystemStore:
                     protocol={'protocol_name': protocol_document['name']},
                     protocol_ref={k: v for k, v in fields['protocol_ref'].items() if v is not None},
                     protocol_bindings=deepcopy(fields.get('protocol_bindings', {})))
+            _configure_retrieval(snapshot, fields.get('retrieval_mode') or (old or {}).get('retrieval_mode'))
             unique = {(s['source_id'], s.get('version')) for s in sources.values()}
             if len(unique) == 1:
                 snapshot['source'] = deepcopy(next(iter(sources.values())))
@@ -241,7 +255,8 @@ class SystemStore:
                 plan = compile_protocol(protocol['spec'], snapshot['protocol_bindings'], [a.model_dump(by_alias=True) for a in agents])
                 if plan != snapshot['protocol_plan'] or workflow_metadata(protocol) != snapshot['workflow_spec']:
                     raise ValueError('保存的协议与编译结果不一致。')
-                for source in snapshot['sources'].values(): retriever_from_snapshot({'source': source})
+                for agent_id in snapshot['sources']:
+                    retriever_from_snapshot(snapshot, agent_id)
             except (ValueError, OSError) as exc: raise SystemFailure(f'配置校验失败：{exc}') from exc
             return
         if document['snapshot'].get('schema_version') == '2':
@@ -255,8 +270,8 @@ class SystemStore:
                 expected = compile_workflow(document['workflow_id'], agents, snapshot['execution_mode'])
                 if expected.model_dump(by_alias=True) != snapshot['workflow_spec']:
                     raise ValueError('保存的流程与实例不一致。')
-                for source in snapshot['sources'].values():
-                    retriever_from_snapshot({'source': source})
+                for agent_id in snapshot['sources']:
+                    retriever_from_snapshot(snapshot, agent_id)
             except (ValueError, OSError) as exc:
                 raise SystemFailure(f'配置或知识源材料校验失败：{exc}') from exc
             return

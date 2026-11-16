@@ -1,4 +1,4 @@
-import type { StoredRunRecord } from './types'
+import type { EmbeddingUsage, RetrievalMode, StoredRunRecord } from './types'
 
 export interface QuestionBank {
   bank_id: string; version: number; name: string; description: string; count: number
@@ -31,7 +31,8 @@ export interface EvaluationManifest {
 export interface EvaluationPreflight {
   token: string; planned_tasks: number; sample_count: number; data_sha256: string; purpose: string
   reference_method: string; manifest: EvaluationManifest | null; request: Record<string, unknown>; model_calls: number
-  targets: { method_id: string; label: string; models: { agent_id: string; model: { model_name?: string; temperature?: number; max_tokens?: number; system_prompt?: string } | null }[]; limits: Record<string, number> | null; workflow: unknown }[]
+  embedding_build?: { document_inputs: number; max_document_requests: number } | null
+  targets: { method_id: string; label: string; retrieval_mode?: RetrievalMode; models: { agent_id: string; model: { model_name?: string; temperature?: number; max_tokens?: number; system_prompt?: string } | null }[]; limits: Record<string, number> | null; workflow: unknown }[]
 }
 export interface ResearchReport {
   complete: boolean; primary_metric: string; reference_method: string
@@ -44,11 +45,12 @@ export interface ResearchReport {
 export interface EvaluationJob {
   job_id: string; name: string; status: string; error: string | null; bank: Pick<QuestionBank, 'bank_id' | 'version' | 'name' | 'sha256'>
   context_mode: string; sample_count: number; repeats: number; fingerprint: string; retryable_count: number
-  targets: { method_id: string; label: string }[]
+  targets: { method_id: string; label: string; retrieval_mode?: RetrievalMode }[]
   progress: { attempted: number; planned: number; completed: number; failed: number; interrupted: number; cancelled?: number }
   plan?: { request: Record<string, unknown>; manifest: EvaluationManifest | null; reference_method?: string }
   archived?: boolean; readonly?: boolean
   report: { complete: boolean; methods: Record<string, MethodSummary>; retry_count: number; research?: ResearchReport;
+    embedding_usage?: { document_builds: EmbeddingUsage | null; queries: EmbeddingUsage | null } | null
     latest_attempt_supplement?: Record<string, MethodSummary>; all_attempt_usage?: MethodSummary['usage'] } | null
 }
 export interface SavedEvaluationPlan {

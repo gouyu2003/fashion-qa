@@ -265,7 +265,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     await waitFor(() => expect(streamQuestion).toHaveBeenCalledWith(
       expect.any(String), expect.any(Function), expect.any(AbortSignal),
-      { workflowId: 'multi_hop_qa_v0', sourceId: 'user_notes', sourceVersion: 1 }))
+      { workflowId: 'multi_hop_qa_v0', sourceId: 'user_notes', sourceVersion: 1, retrievalMode: 'hybrid' }))
   })
 
   it('receives completion while another page is open and preserves the stream and result', async () => {
@@ -450,7 +450,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     expect(streamQuestion).toHaveBeenCalledWith(
       'A multi-hop question?', expect.any(Function), expect.any(AbortSignal),
-      { workflowId: 'multi_hop_qa_v0', sourceId: 'hotpotqa_fixture' },
+      { workflowId: 'multi_hop_qa_v0', sourceId: 'hotpotqa_fixture', retrievalMode: 'hybrid' },
     )
   })
 
@@ -492,7 +492,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     await waitFor(() => expect(streamQuestion).toHaveBeenCalledWith(
       'My own question?', expect.any(Function), expect.any(AbortSignal),
-      { workflowId: 'multi_hop_qa_v0', sourceId: 'demo_fixture_002' },
+      { workflowId: 'multi_hop_qa_v0', sourceId: 'demo_fixture_002', retrievalMode: 'hybrid' },
     ))
   })
 
@@ -507,7 +507,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     await waitFor(() => expect(streamQuestion).toHaveBeenCalledWith(
       'A multi-hop question?', expect.any(Function), expect.any(AbortSignal),
-      { workflowId: 'multi_hop_qa_fixed', sourceId: 'hotpotqa_fixture' },
+      { workflowId: 'multi_hop_qa_fixed', sourceId: 'hotpotqa_fixture', retrievalMode: 'hybrid' },
     ))
   })
 
@@ -589,7 +589,7 @@ describe('App', () => {
     if (!(screen.getByRole('textbox', { name: '多跳问答问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'A multi-hop question?' } })
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     expect(streamQuestion).toHaveBeenCalledWith('A multi-hop question?', expect.any(Function), expect.any(AbortSignal),
-      { workflowId: 'multi_hop_qa_v0', sourceId: 'user_notes', sourceVersion: 1 })
+      { workflowId: 'multi_hop_qa_v0', sourceId: 'user_notes', sourceVersion: 1, retrievalMode: 'hybrid' })
     expect(await screen.findByTitle('知识源 ID：user_notes')).toHaveTextContent('User notes')
     expect(screen.getByText(/第 1–2 行/)).toHaveTextContent('版本 1 · notes.md')
   })

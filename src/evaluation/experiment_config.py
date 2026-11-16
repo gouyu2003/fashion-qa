@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from src.runtime.protocols import Limits
+from src.knowledge.embedding import RetrievalMode
 
 ROOT = Path(__file__).resolve().parents[2]
 MethodId = Literal['single_rag', 'pipeline_fixed', 'pipeline_adaptive', 'multi_expert', 'lead', 'debate']
@@ -80,7 +81,8 @@ class ExperimentLimits(Limits):
 
 
 class ExperimentConfig(Strict):
-    schema_version: int = 1
+    schema_version: Literal[1, 2] = 1
+    retrieval_mode: RetrievalMode | None = None
     dataset: str
     dataset_source: str = 'HotpotQA dev distractor; user supplied local file'
     dataset_sha256: str | None = None
@@ -111,13 +113,25 @@ class ExperimentConfig(Strict):
 
     @model_validator(mode='after')
     def contract(self):
-        if self.schema_version != 1 or len(set(self.methods)) != len(self.methods):
-            raise ValueError('Unsupported schema or duplicate methods')
+        if len(set(self.methods)) != len(self.methods):
+            raise ValueError('Duplicate methods')
+        if self.schema_version == 1 and self.retrieval_mode is not None:
+            raise ValueError('Retrieval mode requires experiment schema_version 2')
         if not set(self.published_systems) <= set(self.methods):
             raise ValueError('Published systems must refer to selected methods')
         if not self.model.name.strip():
             raise ValueError('Model name cannot be blank')
         return self
+
+
+    @property
+    def effective_retrieval_mode(self):
+        return self.retrieval_mode or ('hybrid' if self.schema_version == 2 else 'bm25')
+
+    def frozen_config(self):
+        if self.schema_version == 1:
+            return self.model_dump(exclude={'retrieval_mode'})
+        return self.model_dump() | {'retrieval_mode': self.effective_retrieval_mode}
 
 
 def load_config(path: Path) -> ExperimentConfig:

@@ -41,6 +41,8 @@ import {
 import type { ReactNode } from 'react'
 import { getSystemInfo, getSystemOptions, streamQuestion, getPendingRun, resumeBackgroundRun, cancelBackgroundRun, getRunDetail } from './api'
 import HistoryView from './HistoryView'
+import { EmbeddingIndexControl, RetrievalMode } from './RetrievalMode'
+import type { RetrievalMode as Mode } from './types'
 import { MessageOutlined } from '@ant-design/icons'
 import KnowledgeView from './KnowledgeView'
 import SystemsView from './SystemsView'
@@ -448,6 +450,7 @@ export default function App() {
   const [options, setOptions] = useState<SystemOptions>()
   const [workflowId, setWorkflowId] = useState('')
   const [sourceId, setSourceId] = useState('')
+  const [retrievalMode, setRetrievalMode] = useState<Mode>('hybrid')
   const [sourceVersion, setSourceVersion] = useState<number>()
   const [submittedSelection, setSubmittedSelection] = useState<{ workflowId: string; sourceId: string; sourceVersion?: number }>()
   const [submittedSource, setSubmittedSource] = useState<SourceOption>()
@@ -586,7 +589,7 @@ export default function App() {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
-    const selection = { workflowId: currentWorkflow.workflow_id, sourceId: currentSource?.source_id ?? '',
+    const selection = { workflowId: currentWorkflow.workflow_id, sourceId: currentSource?.source_id ?? '', retrievalMode,
       ...(sourceVersion !== undefined ? { sourceVersion } : {}) }
     setSubmittedSelection(selection)
     setSubmittedSource(currentSource)
@@ -751,7 +754,9 @@ export default function App() {
             <div className="system-run-banner"><strong>{managedSelection ? `${managedSelection.name} · ${managedSelection.systemVersion ?? `草稿试运行 r${managedSelection.draftRevision}`}` : '临时问答'}</strong>
               {managedSelection ? <Button disabled={isRunning} onClick={() => { setManagedSelection(undefined); setSubmittedSelection(undefined); dispatch({ type: 'clear' }) }}>切回临时问答</Button> : null}
             </div>
-            {!managedSelection ? <div className="configuration-controls">
+            {!managedSelection ? <>
+              <div className="configuration-controls">
+              <RetrievalMode value={retrievalMode} disabled={isRunning} onChange={setRetrievalMode} />
               <label>
                 <span>协作流程</span>
                 <Select
@@ -781,7 +786,10 @@ export default function App() {
                   disabled={isRunning || Boolean(managedSelection)}
                   onChange={(version) => { setSourceVersion(version); setSubmittedSelection(undefined); dispatch({ type: 'clear' }) }} />
               </label> : null}
-            </div> : <div className="managed-source-bindings">{Object.entries(frozen?.sources ?? {}).map(([id, s]) =>
+              </div>
+              {retrievalMode !== 'bm25' && currentSource && <EmbeddingIndexControl key={`${sourceId}:${sourceVersion}`}
+                sourceId={sourceId} version={sourceVersion} disabled={isRunning} />}
+            </> : <div className="managed-source-bindings"><p>检索模式 {frozen?.retrieval_mode ?? 'bm25'}</p>{Object.entries(frozen?.sources ?? {}).map(([id, s]) =>
               <p key={id}>{frozen?.agents[id]?.agent_name ?? id}：{s.name} · {s.version ? `版本 ${s.version}` : '固定内容哈希'}</p>)}</div>}
             {currentWorkflow ? (
               <div className="configuration-preview">

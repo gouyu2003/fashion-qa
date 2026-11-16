@@ -305,7 +305,10 @@ export interface RunFilters {
   systemId?: string
 }
 
+export type RetrievalMode = 'bm25' | 'embedding' | 'hybrid'
+
 export interface SystemDraftFields {
+  retrieval_mode?: RetrievalMode
   protocol_ref?: import('./protocolTypes').ProtocolRef | null
   protocol_bindings?: Record<string, string[]>
   agents?: AgentInstance[]
@@ -318,6 +321,7 @@ export interface SystemDraftFields {
 }
 
 export interface SavedSystemSnapshot {
+  retrieval_mode?: RetrievalMode
   protocol_document?: import('./protocolTypes').ProtocolDocument
   protocol_bindings?: Record<string, string[]>
   schema_version?: string
@@ -350,6 +354,7 @@ export interface ManagedSystem {
 }
 
 export interface RunSelection {
+  retrievalMode?: RetrievalMode
   workflowId?: string
   sourceId?: string
   sourceVersion?: number
@@ -416,7 +421,16 @@ export interface StoredTraceEvent {
   payload: Record<string, unknown>
 }
 
+export interface EmbeddingUsage {
+  requests: number
+  known_input_tokens: number | null
+  unknown_token_requests: number
+  failed_requests: number
+  duration_ms: number
+}
+
 export interface RunTimings {
+  embedding?: EmbeddingUsage
   cache?: { source_id: string; cache_hit: boolean }[]
   task_total_wall_ms?: number | null
   categories: Record<string, { wall_ms: number; cumulative_ms: number; count: number }>

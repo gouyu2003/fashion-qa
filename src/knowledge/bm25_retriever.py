@@ -128,6 +128,21 @@ class BM25Retriever:
             (index for index in range(len(self._docs)) if scores[index] > min_score),
             key=lambda index: scores[index], reverse=True,
         )
+        self.prioritize_anchors(ranked, entity_hints)
+        return [self.evidence(index, scores[index]) for index in ranked[:top_k]]
+
+    @property
+    def documents(self):
+        return self._docs
+
+    def evidence(self, index, score) -> EvidenceChunk:
+        return {
+            **self._docs[index],
+            "relevance_score": float(score),
+            **({"source_id": self.source_id} if self.source_id else {}),
+        }
+
+    def prioritize_anchors(self, ranked, entity_hints):
         if entity_hints:
             anchors = [' '.join(self.tokenizer(entity)) for entity in entity_hints if self.tokenizer(entity)]
             def anchored(text: str) -> bool:
@@ -143,16 +158,6 @@ class BM25Retriever:
             subject_hits = {i for i in ranked if any(self._docs[i]['text'].lstrip().startswith(entity) for entity in entity_hints)} if self.is_mixed else set()
             hits = title_hits or heading_hits or subject_hits or {i for i in ranked if anchored(self._docs[i]['text'])}
             ranked.sort(key=lambda i: i not in hits)
-        ranked = ranked[:top_k]
-
-        return [
-            {
-                **self._docs[index],
-                "relevance_score": float(scores[index]),
-                **({"source_id": self.source_id} if self.source_id else {}),
-            }
-            for index in ranked
-        ]
 
     def search_anchored(self, query: str, entity_hints: list[str], top_k: int = 3) -> list[EvidenceChunk]:
         """Resolve second-hop query drift without adding an LLM or changing top_k."""

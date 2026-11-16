@@ -10,6 +10,8 @@ import { configurationGaps, protocolDefaults, retainedBindings } from './systemP
 import type { ProtocolDocument } from './protocolTypes'
 import type { AgentInstance, AgentTemplate, ManagedSelection, ManagedSystem, SystemDocument, SystemDraftFields, SystemOptions } from './types'
 
+import { EmbeddingIndexControl, RetrievalMode } from './RetrievalMode'
+
 function fieldsOf(document: SystemDocument): SystemDraftFields {
   const { name, description, workflow_id, source_id, source_version } = document
   const agents = document.agents ?? document.snapshot.instances ?? Object.entries(document.snapshot.agents).map(([id, a]) => ({
@@ -18,15 +20,16 @@ function fieldsOf(document: SystemDocument): SystemDraftFields {
     source_id: a.role === 'retriever' ? document.source_id : null,
     source_version: a.role === 'retriever' ? document.source_version : null, top_k: a.retrieval_config?.top_k ?? 3,
   }))
-  return { name, description, workflow_id, source_id, source_version, agents, execution_mode: document.execution_mode ?? 'sequential',
+  return { name, description, workflow_id, source_id, source_version, agents, retrieval_mode: document.snapshot.retrieval_mode ?? 'bm25', execution_mode: document.execution_mode ?? 'sequential',
     ...(document.protocol_ref ? { protocol_ref: document.protocol_ref, protocol_bindings: document.protocol_bindings } : {}) }
 }
 
 export function SystemConfigPreview({ document }: { document: SystemDocument }) {
   return <div className="system-config-preview">
     <p>流程：{document.workflow_id ? document.snapshot.protocol.protocol_name ?? document.workflow_id : '尚未选择'} · 知识源：{document.snapshot.source?.name ?? (Object.keys(document.snapshot.sources ?? {}).length ? '按实例绑定固定版本' : '尚未选择')}{document.source_version ? ` · 版本 ${document.source_version}` : ''}</p>
+    <p>检索模式 {document.snapshot.retrieval_mode ?? 'bm25'}</p>
     <Collapse items={Object.entries(document.snapshot.agents).map(([id, agent]) => ({ key: id,
-      label: `${agent.agent_name} · ${agent.role === 'retriever' ? '本地 BM25' : agent.model_config.model_name}（只读）`,
+      label: `${agent.agent_name} · ${agent.role === 'retriever' ? document.snapshot.retrieval_mode ?? 'bm25' : agent.model_config.model_name}（只读）`,
       children: <>{agent.role !== 'retriever' ? <>
         <div className="prompt-facts">
           <span>温度 {agent.model_config.temperature}</span>
@@ -46,7 +49,7 @@ export function SystemConfigPreview({ document }: { document: SystemDocument }) 
 export default function SystemsView({ options, disabled, onUse, onHistory, active = true, onManageProtocols, onDeleted }: {
   options?: SystemOptions; disabled: boolean; active?: boolean; onManageProtocols?: () => void; onUse: (selection: ManagedSelection) => void; onHistory: (id: string) => void; onDeleted?: (id: string) => void
 }) {
-  const empty: SystemDraftFields = { name: '', description: '', workflow_id: null, source_id: null, source_version: null, agents: [], protocol_ref: null, protocol_bindings: {} }
+  const empty: SystemDraftFields = { retrieval_mode: 'hybrid', name: '', description: '', workflow_id: null, source_id: null, source_version: null, agents: [], protocol_ref: null, protocol_bindings: {} }
   const [systems, setSystems] = useState<ManagedSystem[]>([])
   const [selected, setSelected] = useState<ManagedSystem>()
   const [fields, setFields] = useState<SystemDraftFields>(empty)
@@ -254,11 +257,20 @@ export default function SystemsView({ options, disabled, onUse, onHistory, activ
           <section className="ws-section">
             <header className="ws-section-head"><span className="ws-step">03</span><h3>智能体实例</h3></header>
             <div className="ws-section-body">
+              <RetrievalMode value={fields.retrieval_mode ?? 'bm25'} disabled={locked}
+                onChange={retrieval_mode => setFields({ ...fields, retrieval_mode })} />
               <AgentEditor agents={fields.agents ?? []} templates={templates} options={options} disabled={locked}
                 reusableAgents={systems.filter(s => s.system_id !== selected?.system_id).flatMap(s => (fieldsOf(s.draft).agents ?? []).map(a => ({
                   key: `${s.system_id}:${a.agent_id}`, label: `${s.draft.name} · ${a.name}`, agent: a,
                 })))}
                 onChange={agents => setFields({ ...fields, agents, source_id: null, source_version: null })} />
+              {fields.retrieval_mode !== 'bm25' && <>
+                {Array.from(new Map((fields.agents ?? []).filter(a => a.source_id && ['retriever', 'expert'].includes(a.agent_type))
+                  .map(a => [`${a.source_id}:${a.source_version}`, a])).entries()).map(([key, agent]) =>
+                    <EmbeddingIndexControl key={key} sourceId={agent.source_id!} version={agent.source_version ?? undefined}
+                      label={options?.sources.find(source => source.source_id === agent.source_id)?.name ?? agent.source_id!} disabled={locked} />)}
+                <p className="ws-hint">构建向量索引后保存草稿，再试运行或发布。</p>
+              </>}
             </div>
           </section>
 

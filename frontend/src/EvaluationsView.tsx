@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Checkbox, Collapse, ConfigProvider, Empty, Input, InputNumber, Modal, Segmented, Select, Skeleton, Space, Steps } from 'antd'
+import { RetrievalMode } from './RetrievalMode'
+import type { RetrievalMode as Mode } from './types'
 import { evaluationRequest, type EvaluationJob, type EvaluationOptions, type EvaluationResult, type QuestionBank, type EvaluationManifest, type EvaluationPreflight } from './evaluationApi'
 import EvaluationDataPlan from './EvaluationDataPlan'
 import EvaluationPlans from './EvaluationPlans'
@@ -36,6 +38,7 @@ export default function EvaluationsView() {
   const [kind, setKind] = useState<'builtin' | 'system' | 'mixed'>('mixed')
   const [selected, setSelected] = useState<string[]>([])
   const [contextMode, setContextMode] = useState('question_context')
+  const [retrievalMode, setRetrievalMode] = useState<Mode>('hybrid')
   const [override, setOverride] = useState(true)
   const [model, setModel] = useState('deepseek-v4.1-flash')
   const [temperature, setTemperature] = useState(0)
@@ -80,7 +83,7 @@ export default function EvaluationsView() {
     targets: selected.map(value => isBuiltin(value) ? { kind: 'builtin', method: value } : {
       kind: 'system', system_id: options.systems.find(s => `${s.system_id}:${s.version}` === value)?.system_id,
       version: options.systems.find(s => `${s.system_id}:${s.version}` === value)?.version,
-    }), context_mode: contextMode, sample_size: manifest ? null : sampleSize, repeats, seed, top_k: topK,
+    }), context_mode: contextMode, ...(contextMode === 'question_context' && { retrieval_mode: retrievalMode }), sample_size: manifest ? null : sampleSize, repeats, seed, top_k: topK,
     model: override ? { name: model, temperature, max_tokens: maxTokens, output_retries: outputRetries } : null,
     ...advanced, limits, execution_mode: executionMode, primary_metric: primaryMetric,
     bootstrap_samples: bootstrapSamples, reference_index: referenceIndex, saved_plan_id: savedPlanId ?? null,
@@ -185,6 +188,7 @@ export default function EvaluationsView() {
     setSelected(targets.map(t => t.kind === 'builtin' ? t.method! : `${t.system_id}:${t.version}`))
     setPurpose((request.purpose as EvaluationManifest['purpose']) ?? 'development')
     setContextMode(String(request.context_mode ?? 'question_context'))
+    setRetrievalMode(request.retrieval_mode === 'hybrid' || request.retrieval_mode === 'embedding' ? request.retrieval_mode : 'bm25')
     setOverride(!!modelConfig); setModel(modelConfig?.name ?? 'deepseek-v4.1-flash'); setTemperature(modelConfig?.temperature ?? 0)
     setMaxTokens(modelConfig?.max_tokens ?? 4096); setOutputRetries(modelConfig?.output_retries ?? 2)
     setSampleSize(typeof request.sample_size === 'number' ? request.sample_size : null); setRepeats(number('repeats', 1)); setSeed(number('seed', 42)); setTopK(number('top_k', 3))
@@ -298,10 +302,11 @@ export default function EvaluationsView() {
             {step === 2 && <><div className="evaluation-form-heading"><h3>设置实验条件</h3><p>核对常用条件，再按需要展开高级设置。</p></div><div className="evaluation-fields">
           <label>回答材料<Select aria-label="回答材料" value={contextMode} disabled={hasBuiltin} onChange={setContextMode}
             options={[{ value: 'question_context', label: '使用每道题自带的 context' }, { value: 'system_sources', label: '沿用各智能体绑定的固定知识源' }]} /></label>
+          {contextMode === 'question_context' && <RetrievalMode value={retrievalMode} onChange={setRetrievalMode} />}
           {contextMode === 'question_context' && <small>本次运行会用每题 context 替换检索材料，原发布系统保持独立保存。</small>}
           <Space wrap>
             <label>每题重复次数<InputNumber aria-label="重复次数" min={1} max={100} value={repeats} onChange={v => setRepeats(v ?? 1)} /></label>
-            {hasBuiltin && <label>检索 top_k<InputNumber aria-label="评测 top_k" min={1} max={50} value={topK} onChange={v => setTopK(v ?? 3)} /></label>}
+            {contextMode === 'question_context' && <label>检索 top_k<InputNumber aria-label="评测 top_k" min={1} max={50} value={topK} onChange={v => setTopK(v ?? 3)} /></label>}
           </Space>
           <Checkbox checked={override} disabled={hasBuiltin} onChange={e => setOverride(e.target.checked)}>统一模型参数{kind !== 'builtin' ? '（覆盖本次评测副本）' : ''}</Checkbox>
           {override && <><label>模型名称<Input aria-label="评测模型" value={model} onChange={e => setModel(e.target.value)} /></label>
@@ -342,8 +347,9 @@ export default function EvaluationsView() {
           {checkedPlan && <div aria-label="已校验实验方案">
             <Alert type="success" title={`校验通过：${checkedPlan.sample_count} 题，${checkedPlan.planned_tasks} 项任务，模型调用 ${checkedPlan.model_calls} 次。`} />
             <p>数据指纹：{checkedPlan.data_sha256}；主指标：{primaryMetric.toUpperCase()}；评分保留首次尝试，失败计零，补跑只作补充。</p>
+            {checkedPlan.embedding_build && <p>预计编码 {checkedPlan.embedding_build.document_inputs} 条片段，最多 {checkedPlan.embedding_build.max_document_requests} 批文档请求（重试另计）。</p>}
             <Collapse items={[{ key: 'plan', label: '核对模型、提示词、流程与资源条件', children: checkedPlan.targets.map(t => <section key={t.method_id}>
-              <h4>{METHOD_NAMES[t.label] ?? t.label}</h4>
+              <h4>{METHOD_NAMES[t.label] ?? t.label}{t.retrieval_mode ? ` · ${t.retrieval_mode}` : ''}</h4>
               {t.models.map(m => <p key={m.agent_id}>{m.agent_id}：{m.model?.model_name ?? '检索节点'}；温度 {m.model?.temperature ?? '—'}；输出上限 {m.model?.max_tokens ?? '—'}</p>)}
               <details><summary>完整冻结配置</summary><pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{JSON.stringify(t, null, 2)}</pre></details>
             </section>) }]} />
