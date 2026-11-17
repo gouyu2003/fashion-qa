@@ -17,6 +17,7 @@ import GSM8KEvaluation from './GSM8KEvaluation'
 import './evaluations.css'
 
 const message = (error: unknown) => error instanceof Error ? error.message : '操作失败'
+const DEFAULT_MODEL = 'deepseek-v4.1-flash-1017'
 
 type Workspace = 'tasks' | 'data' | 'plans' | 'archives' | 'create' | 'gsm8k'
 
@@ -40,7 +41,7 @@ export default function EvaluationsView() {
   const [contextMode, setContextMode] = useState('question_context')
   const [retrievalMode, setRetrievalMode] = useState<Mode>('hybrid')
   const [override, setOverride] = useState(true)
-  const [model, setModel] = useState('deepseek-v4.1-flash')
+  const [model, setModel] = useState(DEFAULT_MODEL)
   const [temperature, setTemperature] = useState(0)
   const [maxTokens, setMaxTokens] = useState(4096)
   const [topK, setTopK] = useState(3)
@@ -189,7 +190,7 @@ export default function EvaluationsView() {
     setPurpose((request.purpose as EvaluationManifest['purpose']) ?? 'development')
     setContextMode(String(request.context_mode ?? 'question_context'))
     setRetrievalMode(request.retrieval_mode === 'hybrid' || request.retrieval_mode === 'embedding' ? request.retrieval_mode : 'bm25')
-    setOverride(!!modelConfig); setModel(modelConfig?.name ?? 'deepseek-v4.1-flash'); setTemperature(modelConfig?.temperature ?? 0)
+    setOverride(!!modelConfig); setModel(modelConfig?.name ?? DEFAULT_MODEL); setTemperature(modelConfig?.temperature ?? 0)
     setMaxTokens(modelConfig?.max_tokens ?? 4096); setOutputRetries(modelConfig?.output_retries ?? 2)
     setSampleSize(typeof request.sample_size === 'number' ? request.sample_size : null); setRepeats(number('repeats', 1)); setSeed(number('seed', 42)); setTopK(number('top_k', 3))
     setPrimaryMetric(String(request.primary_metric ?? 'f1')); setBootstrapSamples(number('bootstrap_samples', 2000))

@@ -13,7 +13,7 @@ from src.runtime.chat_store import ChatStore
 from src.runtime.interactive import InteractiveRuns, ExecutionFailure
 from src.runtime.service import RunService
 from src.runtime.sqlite_repository import SQLiteRunRepository
-from src.runtime.system_store import SystemStore
+from src.runtime.system_store import SystemStore, fingerprint
 
 
 class AnswerGraph:
@@ -419,27 +419,39 @@ def test_legacy_queued_run_uses_frozen_policy_and_new_send_upgrades(chat, monkey
     from src.runtime.chat_context import LEGACY_INSTRUCTIONS, POLICY_VERSION
     key = create(chat)['conversation_id']
     snapshot = deepcopy(chat.store.get(key)['config_snapshot'])
+    alias = 'deepseek-v4.1-flash'
+    pinned = 'deepseek-v4.1-flash-1017'
+    for agent in snapshot['agents'].values():
+        agent['model_config']['model_name'] = alias
+    snapshot['config_sha256'] = fingerprint(snapshot)
     legacy = context_config(snapshot)
     for field in ('policy_version', 'general_model_config', 'general_instructions', 'system_scope'):
         legacy.pop(field)
     legacy.update(instructions=LEGACY_INSTRUCTIONS, prompt_version='chat-context-v1')
     legacy['model_config'].update(system_prompt=LEGACY_INSTRUCTIONS, max_tokens=512)
     with chat.repository._connection() as db:
-        db.execute('UPDATE conversations SET context_config_json=? WHERE conversation_id=?', (json.dumps(legacy), key))
+        db.execute('UPDATE conversations SET context_config_json=?, snapshot_json=? WHERE conversation_id=?',
+                   (json.dumps(legacy), json.dumps(snapshot), key))
     queued = chat.store.send(key, '研究生借阅', 'queued')
     record = chat.repository.get_run(queued['run_id'])
-    record.context.config_snapshot['_chat']['config'] = legacy
+    old_run_snapshot = {**snapshot, '_chat': {**record.context.config_snapshot['_chat'], 'config': legacy}}
     # Simulate a Run admitted by the old release, without rewriting its system snapshot.
     with chat.repository._connection() as db:
-        db.execute('UPDATE runs SET config_snapshot_json=? WHERE run_id=?',
-                   (json.dumps(record.context.config_snapshot), queued['run_id']))
+        db.execute('UPDATE runs SET config_snapshot_json=?, model_name=? WHERE run_id=?',
+                   (json.dumps(old_run_snapshot), alias, queued['run_id']))
     monkeypatch.setattr('src.llm.build_chat_model', lambda config: pytest.fail('legacy first turn must skip the model'))
     original = finish(chat, queued)
     assert original.run.status == 'completed' and original.run.metrics.llm_call_count == 0
     hybrid_model(monkeypatch, general='你好')
     submitted = chat.store.send(key, '你好', 'new')
     detail = finish(chat, submitted)
-    assert detail.run.context.config_snapshot['_chat']['config']['policy_version'] == POLICY_VERSION
+    new_snapshot = detail.run.context.config_snapshot
+    config = new_snapshot['_chat']['config']
+    assert config['policy_version'] == POLICY_VERSION
+    assert detail.run.context.model_name == pinned
+    assert config['model_config']['model_name'] == config['general_model_config']['model_name'] == pinned
+    assert new_snapshot['config_sha256'] != snapshot['config_sha256']
+    assert new_snapshot['source'] == snapshot['source']
     assert chat.store.get(key)['config_snapshot'] == snapshot
     assert chat.store.get(key)['context_config'] == legacy
     assert chat.store.get(key)['chat_policy_version'] == POLICY_VERSION

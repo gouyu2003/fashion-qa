@@ -8,6 +8,7 @@ from src.runtime.chat_context import POLICY_VERSION, bounded_history, context_co
 from src.runtime.chat_messages import message_to_dict
 from src.runtime.interactive import ExecutionFailure, request_fingerprint
 from src.runtime.models import RunContext
+from src.runtime.system_store import pin_snapshot_generation_models
 from src.runtime.version import code_version
 
 
@@ -82,6 +83,7 @@ class ChatStore:
                     raise ExecutionFailure('同一创建编号对应的系统选择已改变。')
                 return self._document(db, row)
             snapshot = self.systems.run_snapshot(selection['system_id'], selection.get('system_version'), selection.get('draft_revision'))
+            pin_snapshot_generation_models(snapshot)
             config = context_config(snapshot)
             key, now = uuid4().hex, utcnow()
             db.execute('INSERT INTO conversations VALUES (?,?,?,?,?,?,?,?)',
@@ -125,6 +127,7 @@ class ChatStore:
     def send(self, key, question, request_key):
         conversation = self.get(key)
         snapshot = deepcopy(conversation['config_snapshot'])
+        pin_snapshot_generation_models(snapshot)
         workflow = snapshot['workflow_spec']
         models = {a['model_config']['model_name'] for a in snapshot['agents'].values() if a.get('model_config', {}).get('model_name')}
         context = RunContext(run_id=uuid4().hex, entrypoint='api', question=question,

@@ -28,7 +28,7 @@
     }
   ],
   "model_config": {
-    "model_name": "deepseek-v4.1-flash",
+    "model_name": "deepseek-v4.1-flash-1017",
     "temperature": 0.1,
     "max_tokens": 512,
     "system_prompt": "本节点不调用 LLM。检索命中标记 unknown，未命中标记 insufficient；相关性得分仅用于 BM25 排序，不是概率。top_k 由 retrieval_config 配置。"

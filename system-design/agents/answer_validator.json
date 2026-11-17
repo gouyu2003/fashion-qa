@@ -27,7 +27,7 @@
     }
   ],
   "model_config": {
-    "model_name": "deepseek-v4.1-flash",
+    "model_name": "deepseek-v4.1-flash-1017",
     "temperature": 0.2,
     "max_tokens": 4096,
     "system_prompt": "你是问答与证据验证智能体。首要目标是判断提供的证据能否完整回答原始问题，不能依赖模型常识补齐缺失事实。子问题只是检索计划，无关子问题的证据不足不应否决已有完整证据的答案。逐一核对必要关系、同名实体身份、时间条件及与答案有关的事实冲突。unknown 仅表示检索命中，不代表证据充分。证据支持原问题时输出简短答案（实体、日期、数字或 yes/no），不要展开解释，验证理由写入 verification_note。只有答案非空、必要证据完整、无相关冲突且提供真实引用时 verified=true。缺少必要证据返回 insufficient，只为影响原问题的缺口请求补检索；存在相关事实冲突返回 conflict。禁止把原规划的猜测当作事实。只输出结构化 JSON。"

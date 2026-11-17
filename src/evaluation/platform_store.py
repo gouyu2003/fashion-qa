@@ -20,7 +20,8 @@ from src.evaluation.experiment_methods import method_definition, configure_batch
 from src.evaluation.experiment_store import utcnow
 from src.knowledge.hotpotqa_context import runtime_input
 from src.knowledge.embedding import EmbeddingError, RetrievalMode
-from src.runtime.system_store import SystemStore, fingerprint
+from src.llm import pin_generation_model_id
+from src.runtime.system_store import SystemStore, fingerprint, pin_snapshot_generation_models
 
 
 RETRYABLE_STATUSES = ('failed', 'interrupted', 'cancelled')
@@ -281,6 +282,9 @@ class EvaluationStore:
     def prepare_job(self, fields: JobRequest, systems: SystemStore):
         if not fields.name.strip():
             raise EvaluationFailure('任务名称不能为空。')
+        if fields.model:
+            model = fields.model.model_copy(update={'name': pin_generation_model_id(fields.model.name)})
+            fields = fields.model_copy(update={'model': model})
         if fields.saved_plan_id:
             from src.evaluation.platform_workspace import get_plan
             get_plan(self, fields.saved_plan_id)
@@ -322,6 +326,7 @@ class EvaluationStore:
                             agent['model_config'].update(model_name=fields.model.name, temperature=fields.model.temperature,
                                                          max_tokens=fields.model.max_tokens)
                             agent['failure_handling'] = {'max_retries': fields.model.output_retries}
+                pin_snapshot_generation_models(snapshot)
                 snapshot['config_sha256'] = fingerprint(snapshot)
                 method_id = 'system_' + key[:16]
                 definition = dict(method_id=method_id, label=f"{snapshot['system_ref']['name']} · {target.version}",

@@ -7,7 +7,7 @@
   "repeats": 1,
   "dataset_sha256": "c25430a3e1a130ad3b3d3a0a775ae2197a7eaba58194034aec79e0080e876f61",
   "model": {
-    "name": "deepseek-v4.1-flash",
+    "name": "deepseek-v4.1-flash-1017",
     "temperature": 0.0,
     "max_tokens": 4096,
     "output_retries": 2

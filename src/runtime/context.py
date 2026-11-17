@@ -8,7 +8,7 @@ from uuid import uuid4
 from src.runtime.models import RunContext, RunEntryPoint
 from src.runtime.specs import RuntimeRequest
 from src.runtime.system import DEFAULT_CATALOG_PATH, pin_source_embedding, resolve_system
-from src.runtime.system_store import fingerprint
+from src.runtime.system_store import SystemStore, fingerprint, pin_snapshot_generation_models
 from src.runtime.version import code_version
 
 
@@ -34,8 +34,8 @@ def build_v0_run_context(
     if request.system_id:
         if catalog_path is not None:
             raise ValueError('系统版本运行不能覆盖系统配置文件。')
-        from src.runtime.system_store import SystemStore
         snapshot = SystemStore().run_snapshot(request.system_id, request.system_version, request.draft_revision)
+        pin_snapshot_generation_models(snapshot)
         workflow = snapshot['workflow_spec']
         models = {agent['model_config']['model_name'] for agent in snapshot['agents'].values()
                   if agent.get('model_config', {}).get('model_name')}
@@ -49,8 +49,9 @@ def build_v0_run_context(
         **({"source_version": request.source_version} if request.source_version is not None else {}),
         catalog_path=catalog_path or os.getenv("MAQA_SYSTEM_CONFIG_PATH") or DEFAULT_CATALOG_PATH,
     )
-    first_agent = next(iter(system.agents.values())).config
     snapshot = system.snapshot()
+    pin_snapshot_generation_models(snapshot)
+    first_agent = next(iter(snapshot['agents'].values()))
     if request.retrieval_mode:
         snapshot['retrieval_mode'] = request.retrieval_mode
         if request.retrieval_mode != 'bm25':

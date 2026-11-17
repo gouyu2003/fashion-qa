@@ -11,6 +11,7 @@ from pathlib import Path
 import sqlite3
 from uuid import uuid4
 
+from src.llm import pin_generation_model_id
 from src.runtime.system import DEFAULT_CATALOG_PATH, pin_source_embedding, resolve_system, retriever_from_snapshot
 from src.runtime.specs import WorkflowSpec
 from src.runtime.instances import (validate_instances, legacy_instances, compile_workflow,
@@ -33,6 +34,19 @@ def template_snapshot(*args, **kwargs):
 def fingerprint(snapshot: dict) -> str:
     body = {k: v for k, v in snapshot.items() if k not in {'config_sha256', 'system_ref'}}
     return hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def pin_snapshot_generation_models(snapshot: dict) -> None:
+    """Pin aliases in a new draft or run snapshot, leaving the saved source intact."""
+    changed = False
+    for agent in [*snapshot['agents'].values(), *snapshot.get('instances', [])]:
+        config = agent.get('model_config') or {}
+        name = config.get('model_name')
+        if name and (pinned := pin_generation_model_id(name)) != name:
+            config['model_name'] = pinned
+            changed = True
+    if changed:
+        snapshot['config_sha256'] = fingerprint(snapshot)
 
 
 def _configure_retrieval(snapshot, mode):
@@ -213,6 +227,7 @@ class SystemStore:
     def create(self, fields):
         system_id = 'sys_' + uuid4().hex
         document = self._draft(system_id, fields)
+        pin_snapshot_generation_models(document['snapshot'])
         now = datetime.now(timezone.utc).isoformat()
         with self.connection() as db:
             db.execute('INSERT INTO systems VALUES (?, 1, ?, ?, ?)',
@@ -226,6 +241,7 @@ class SystemStore:
             if row['revision'] != expected_revision:
                 raise SystemFailure('草稿已发生修改，请重新读取后再保存。', 409)
             document = self._draft(system_id, fields, json.loads(row['draft']))
+            pin_snapshot_generation_models(document['snapshot'])
             db.execute('UPDATE systems SET revision=revision+1, draft=?, updated_at=? WHERE system_id=?',
                        (json.dumps(document, ensure_ascii=False), datetime.now(timezone.utc).isoformat(), system_id))
         return self.get(system_id)
@@ -306,6 +322,7 @@ class SystemStore:
             document.update(version=f'v{number}', draft_revision=expected_revision, created_at=datetime.now(timezone.utc).isoformat())
             document['snapshot']['system_version'] = document['version']
             document['snapshot']['config_sha256'] = fingerprint(document['snapshot'])
+            pin_snapshot_generation_models(document['snapshot'])
             db.execute('INSERT INTO releases VALUES (?, ?, ?, ?, ?)',
                        (system_id, number, expected_revision, json.dumps(document, ensure_ascii=False), document['created_at']))
         return document

@@ -24,7 +24,7 @@
     "debate"
   ],
   "model": {
-    "name": "deepseek-v4.1-flash",
+    "name": "deepseek-v4.1-flash-1017",
     "temperature": 0.0,
     "max_tokens": 4096,
     "output_retries": 2

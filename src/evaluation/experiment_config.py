@@ -11,6 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from src.runtime.protocols import Limits
 from src.knowledge.embedding import RetrievalMode
+from src.llm import DEFAULT_GENERATION_MODEL, pin_generation_model_id
 
 ROOT = Path(__file__).resolve().parents[2]
 MethodId = Literal['single_rag', 'pipeline_fixed', 'pipeline_adaptive', 'multi_expert', 'lead', 'debate']
@@ -45,7 +46,7 @@ class Strict(BaseModel):
 
 
 class ModelConfig(Strict):
-    name: str = Field(default='deepseek-v4.1-flash', min_length=1)
+    name: str = Field(default=DEFAULT_GENERATION_MODEL, min_length=1)
     temperature: float = Field(default=0.0, ge=0, le=2, allow_inf_nan=False)
     max_tokens: int = Field(default=4096, ge=1, le=65536)
     output_retries: int = Field(default=2, ge=0, le=5)
@@ -136,6 +137,7 @@ class ExperimentConfig(Strict):
 
 def load_config(path: Path) -> ExperimentConfig:
     config = ExperimentConfig.model_validate(read_json(path))
+    config.model.name = pin_generation_model_id(config.model.name)
     def absolute(value):
         return str((path.resolve().parent / value).resolve())
     config.dataset = absolute(config.dataset)

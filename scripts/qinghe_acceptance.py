@@ -42,7 +42,7 @@ def has_fact(answer, fact):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--allow-model-calls", action="store_true", required=True)
-    parser.add_argument("--model", default="deepseek-v4.1-flash")
+    parser.add_argument("--model", default="deepseek-v4.1-flash-1017")
     parser.add_argument("--output", type=Path, default=ROOT / ".pytest-live-qinghe-fix/results.json")
     args = parser.parse_args()
     work = ROOT / ".pytest-live-qinghe-fix"

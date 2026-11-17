@@ -17,6 +17,11 @@ from langchain_openai import ChatOpenAI
 ENV_API_KEY = "DEEPSEEK_API_KEY"
 ENV_BASE_URL = "DEEPSEEK_BASE_URL"
 ENV_MODEL = "DEEPSEEK_MODEL"
+DEFAULT_GENERATION_MODEL = "deepseek-v4.1-flash-1017"
+
+
+def pin_generation_model_id(model_name: str) -> str:
+    return DEFAULT_GENERATION_MODEL if model_name == "deepseek-v4.1-flash" else model_name
 
 def require_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
@@ -33,7 +38,7 @@ def build_chat_model(agent_config: dict[str, Any]) -> ChatOpenAI:
 
     api_key = require_env(ENV_API_KEY)
     base_url = require_env(ENV_BASE_URL)
-    model_name = model_config.get("model_name") or os.environ.get(ENV_MODEL, "").strip()
+    model_name = model_config.get("model_name") or pin_generation_model_id(os.environ.get(ENV_MODEL, "").strip())
     if not model_name:
         raise RuntimeError("模型名为空：需配置 model_config.model_name 或环境变量 DEEPSEEK_MODEL")
 

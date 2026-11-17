@@ -87,7 +87,7 @@ Copy-Item .env.example .env
 | `DEEPSEEK_BASE_URL` | OpenAI 兼容接口地址，按服务提供方填写 |
 | `DEEPSEEK_MODEL` | 智能体配置未指定模型名时的备用值 |
 
-模型名优先使用 `system-design/agents/` 下智能体 JSON 的 `model_config.model_name`，只有该值缺失或为空时才使用 `DEEPSEEK_MODEL`。当前预置配置指定了 `deepseek-v4-flash-0731`/`deepseek-v4.1-flash`/；切换模型时需更新相应智能体的配置，仅修改 `.env` 中的 `DEEPSEEK_MODEL` 不会覆盖 JSON 中的模型名。
+生成模型默认使用 `deepseek-v4.1-flash-1017`。模型名优先使用智能体 `model_config.model_name`，缺省时从 `DEEPSEEK_MODEL` 读取。新提交的问答和新建评测会将旧别名 `deepseek-v4.1-flash` 固定为 `deepseek-v4.1-flash-1017`，执行配置会记录具体 ID。已保存的历史运行和已冻结的评测继续按原配置追溯。语义检索的 embedding 由知识源单独配置。
 
 后端与 CLI 启动时加载 `.env`。单纯导入材料和本地检索不调用外部模型；执行问答需要模型连接配置。
 
