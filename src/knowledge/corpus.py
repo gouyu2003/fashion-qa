@@ -19,6 +19,10 @@ MAX_TOTAL_BYTES = 10 * 1024 * 1024
 MAX_CHUNKS = 20_000
 
 
+def document_topic_title(filename: str) -> str:
+    return re.sub(r'^\d+[\s._-]+', '', Path(filename).stem).strip()
+
+
 class ImportFailure(ValueError):
     def __init__(self, code: str, message: str):
         super().__init__(message)

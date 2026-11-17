@@ -161,6 +161,7 @@ export interface EvidenceGroup {
   chunks: EvidenceChunk[]
   sufficiency: 'sufficient' | 'insufficient' | 'unknown'
   insufficiency_note: string
+  topic_retrieval?: { applied: boolean; filename: string | null; query: string | null }
 }
 
 export interface SupportingEvidence extends EvidenceLocation {

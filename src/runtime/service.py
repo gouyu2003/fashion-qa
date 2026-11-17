@@ -38,6 +38,21 @@ RECURSION_LIMIT = 30
 
 def _build_default_graph(context: RunContext, usage_collector: LLMUsageCollector) -> Any:
     snapshot = context.config_snapshot
+    chat_config = snapshot.get('_chat', {}).get('config', {})
+    if chat_config.get('topic_planner_instructions'):
+        prompts = {'planner': chat_config['topic_planner_instructions'],
+                   'answer_validator': chat_config.get('topic_review_instructions')}
+        agents = dict(snapshot['agents'])
+        for key, agent in agents.items():
+            role = agent.get('role')
+            if instructions := prompts.get(role):
+                model = agent['model_config']
+                agents[key] = {**agent, 'model_config': {**model,
+                    'system_prompt': model['system_prompt'] + instructions}}
+            elif role == 'retriever':
+                agents[key] = {**agent, '_topic_search': True}
+        snapshot = {**snapshot, 'agents': agents}
+        context = context.model_copy(update={'config_snapshot': snapshot})
     if snapshot.get('schema_version') == '3':
         from src.runtime.protocol_runtime import build_protocol_graph
         return build_protocol_graph(context, usage_collector)
@@ -300,8 +315,8 @@ class RunService:
             hybrid = False
             knowledge_question = general_question = ''
             if chat:
-                from src.runtime.chat_context import POLICY_VERSION, resolve_context
-                hybrid = chat['config'].get('policy_version') == POLICY_VERSION
+                from src.runtime.chat_context import ROUTED_POLICY_VERSIONS, resolve_context
+                hybrid = chat['config'].get('policy_version') in ROUTED_POLICY_VERSIONS
                 usage_collector.check_cancelled()
                 node_call_count += 1
                 yield make_event('node_started', node='chat_context', cycle=1,

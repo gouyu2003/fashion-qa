@@ -46,6 +46,7 @@ class EvidenceGroup(TypedDict):
     chunks: list[EvidenceChunk]
     sufficiency: Literal["sufficient", "insufficient", "unknown"]
     insufficiency_note: str
+    topic_retrieval: NotRequired[dict]
 
 
 class RetrievalSupplementRequest(TypedDict):

@@ -108,7 +108,7 @@ class BM25Retriever:
 
     def search(
         self, query: str, top_k: int = 3, min_score: float = MIN_SCORE,
-        *, entity_hints: list[str] | None = None,
+        *, entity_hints: list[str] | None = None, filename: str | None = None,
     ) -> list[EvidenceChunk]:
         """返回得分高于 min_score 的最多 top_k 条证据，按得分降序。
 
@@ -125,7 +125,8 @@ class BM25Retriever:
 
         scores = self._bm25.get_scores(query_tokens)
         ranked = sorted(
-            (index for index in range(len(self._docs)) if scores[index] > min_score),
+            (index for index, doc in enumerate(self._docs)
+             if scores[index] > min_score and (filename is None or doc.get('filename') == filename)),
             key=lambda index: scores[index], reverse=True,
         )
         self.prioritize_anchors(ranked, entity_hints)

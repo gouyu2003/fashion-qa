@@ -471,6 +471,48 @@ def test_history_includes_general_exchange_for_followup_without_relabeling_evide
     assert chat.store.messages(key)[-3]['result']['verification_applicable'] is False
 
 
+def test_queued_v2_still_uses_routed_generation_with_its_frozen_prompt(chat, monkeypatch):
+    key = create(chat)['conversation_id']
+    queued = chat.store.send(key, '你好', 'v2')
+    snapshot = chat.repository.get_run(queued['run_id']).context.config_snapshot
+    config = snapshot['_chat']['config']
+    config.update(policy_version='chat-hybrid-v2', prompt_version='chat-context-v2', instructions='frozen v2 prompt')
+    config.pop('topic_planner_instructions')
+    config.pop('topic_review_instructions')
+    with chat.repository._connection() as db:
+        db.execute('UPDATE runs SET config_snapshot_json=? WHERE run_id=?', (json.dumps(snapshot), queued['run_id']))
+    calls = hybrid_model(monkeypatch, general='你好', answer='在的。')
+    run = finish(chat, queued).run
+    assert run.status == 'completed' and run.final_state['answer'] == '在的。'
+    assert run.final_state['chat_context']['policy_version'] == 'chat-hybrid-v2'
+    assert run.final_state['verification_applicable'] is False
+    assert calls[0][1].startswith('frozen v2 prompt\n')
+    assert chat.store.send(key, '你好', 'v2')['run_id'] == queued['run_id']
+
+
+def test_topic_pipeline_uses_frozen_chat_only_instructions(chat, monkeypatch):
+    from src.runtime.service import _build_default_graph
+
+    key = create(chat)['conversation_id']
+    run = chat.store.send(key, '报销流程', 'topic')
+    context = chat.repository.get_run(run['run_id']).context
+    snapshot = deepcopy(context.config_snapshot)
+    saved_chat = snapshot.pop('_chat')
+    snapshot.update(schema_version='3', retrieval_mode='hybrid', protocol_plan={'spec': {'family': 'pipeline'}})
+    snapshot['source'].update(source_type='document_corpus', files=[{'filename': '01-报销流程.md'}])
+    captured = lambda ctx, _: ctx.config_snapshot['agents']
+    monkeypatch.setattr('src.runtime.protocol_runtime.build_protocol_graph', captured)
+    plain = context.model_copy(update={'config_snapshot': snapshot})
+    assert _build_default_graph(plain, LLMUsageCollector()) == snapshot['agents']
+    saved_chat['config'] = context_config(snapshot)
+    with_chat = context.model_copy(update={'config_snapshot': {**snapshot, '_chat': saved_chat}})
+    agents = _build_default_graph(with_chat, LLMUsageCollector())
+    assert '报销流程' in agents['planner_v0']['model_config']['system_prompt']
+    assert saved_chat['config']['topic_review_instructions'] in agents['answer_validator_v0']['model_config']['system_prompt']
+    assert agents['retriever_v0']['_topic_search'] is True
+    assert '_topic_search' not in snapshot['agents']['retriever_v0']
+
+
 def test_statistics_eligibility_consistent_for_legacy_general_mixed_and_clarification(chat, monkeypatch):
     from src.runtime.history import summarize_history
     key = create(chat)['conversation_id']

@@ -142,7 +142,12 @@ function EventBody({ event }: { event: StoredTraceEvent }) {
   if (event.node === 'retriever_v0' || payload.agent_type === 'retriever') {
     const groups = output.evidence_chunks ?? []
     const count = groups.reduce((sum, group) => sum + group.chunks.length, 0)
-    return <p className="history-event-note">覆盖 {groups.length} 个子问题 · 返回 {count} 条候选证据</p>
+    return <div className="history-event-note">
+      <p>覆盖 {groups.length} 个子问题 · 返回 {count} 条候选证据</p>
+      {groups.map(({ sq_id, topic_retrieval: topic }) => topic && <p key={sq_id}>
+        {sq_id} · {topic.applied ? `主题补查 · ${topic.filename} · ${topic.query}` : '沿用 Hybrid 排序'}
+      </p>)}
+    </div>
   }
   if (output.expert_results) return <AgentResults results={output.expert_results} />
   if (event.node === 'answer_validator_v0' || payload.agent_type === 'answer_validator') {

@@ -68,6 +68,41 @@ def test_background_build_deduplicates_and_recovers(tmp_path, provider):
     assert len(provider) == 1
 
 
+@pytest.mark.parametrize('duplicate_title', [False, True])
+def test_topic_retrieval_uses_bound_document_and_preserves_original_hybrid(tmp_path, provider, duplicate_title):
+    from src.agents.retriever import build_evidence_groups
+    from src.knowledge.corpus import corpus_retriever, prepare_corpus
+
+    files = [
+        ('01-报销流程.md', '# 报销流程\n\n## 申请材料\n\n报销申请须附发票。\n\n## 审批步骤\n\n主管审核后提交财务。'.encode()),
+        ('02-付款须知.md', '# 付款须知\n\n财务共享中心提供付款进度查询。'.encode()),
+    ]
+    if duplicate_title:
+        files.append(('03-报销流程.md', '# 报销流程\n\n另一部门的报销说明。'.encode()))
+    corpus, index = prepare_corpus(files)
+    lexical = corpus_retriever({**corpus, 'index': index, 'source_version': 1}, 'finance')
+    vector_index = embedding.prepare_index(tmp_path, lexical)
+    retriever = embedding.VectorRetriever(lexical, embedding.load_index(lexical, vector_index), 'hybrid')
+    question = '财务共享中心的报销流程是什么？'
+    keywords = ['报销流程', '申请材料', '审批步骤', '申请材料']
+    sub_question = {'id': 'sq_1', 'question': question, 'keywords': keywords, 'depends_on': []}
+    original = build_evidence_groups([sub_question], retriever, top_k=3)[0]
+    improved = build_evidence_groups([sub_question], retriever, top_k=3, topic_search=True)[0]
+    assert 'topic_retrieval' not in original
+    assert [kind for kind, _ in provider].count('query') == 2
+    assert len({c['chunk_id'] for c in improved['chunks']}) == len(improved['chunks']) == 3
+    if duplicate_title:
+        assert not improved['topic_retrieval']['applied']
+        assert improved['chunks'] == original['chunks']
+    else:
+        assert improved['topic_retrieval'] == {
+            'applied': True, 'filename': '01-报销流程.md', 'query': '报销流程 申请材料 审批步骤'}
+        assert {c['line_start'] for c in improved['chunks'][:2]} == {5, 9}
+        assert all(c['source_id'] == 'finance' and c['source_version'] == 1 for c in improved['chunks'][:2])
+    dependent = {**sub_question, 'depends_on': ['previous']}
+    assert 'topic_retrieval' not in build_evidence_groups([dependent], retriever, topic_search=True)[0]
+
+
 def test_experiment_freezes_shared_label_free_indexes(tmp_path, monkeypatch, provider):
     from src.runtime.service import RunService
     from src.runtime.sqlite_repository import SQLiteRunRepository

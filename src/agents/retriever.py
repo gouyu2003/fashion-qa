@@ -82,6 +82,8 @@ def build_evidence_groups(
     retriever: RetrieverLike,
     supplement: Optional[dict[str, Any]] = None,
     top_k: int = TOP_K,
+    *,
+    topic_search: bool = False,
 ) -> list[EvidenceGroup]:
     """串行检索全部子问题，返回按输入顺序无关的 EvidenceGroup 列表。"""
     groups: list[EvidenceGroup] = []
@@ -110,12 +112,18 @@ def build_evidence_groups(
 
         query = " ".join([sq["question"], *keywords, *hints]).strip()
         anchored_search = getattr(retriever, 'search_anchored', None)
-        chunks = (anchored_search(query, hints, top_k=top_k)
-                  if hints and callable(anchored_search) else retriever.search(query, top_k=top_k))
+        topic = None
+        search_topic = getattr(retriever, 'search_topic', None) if topic_search else None
+        if callable(search_topic) and not sq.get('depends_on'):
+            chunks, topic = search_topic(query, sq['question'], keywords, top_k=top_k)
+        else:
+            chunks = (anchored_search(query, hints, top_k=top_k)
+                      if hints and callable(anchored_search) else retriever.search(query, top_k=top_k))
         observer = current_observer.get()
         if observer:
             observer.emit('retrieval', name='retrieval', sq_id=sq['id'], query=query,
-                          entity_hints=hints, matched_chunks=[c.get('chunk_id', c.get('source_title')) for c in chunks])
+                          entity_hints=hints, matched_chunks=[c.get('chunk_id', c.get('source_title')) for c in chunks],
+                          **({'topic_retrieval': topic} if topic is not None else {}))
 
         if chunks:
             resolved[sq["id"]] = chunks[0]
@@ -128,6 +136,8 @@ def build_evidence_groups(
                 "sufficiency": "insufficient",
                 "insufficiency_note": f"本地知识库未检索到可回答「{sq['question']}」的证据",
             })
+        if topic is not None:
+            groups[-1]['topic_retrieval'] = topic
     return groups
 
 
@@ -144,7 +154,8 @@ def retriever_fn(
 
     with observe('retrieval'):
         groups = build_evidence_groups(
-            list(state.get("sub_questions", [])), local, supplement, top_k=configured_top_k(config))
+            list(state.get("sub_questions", [])), local, supplement, top_k=configured_top_k(config),
+            topic_search=config.get('_topic_search', False))
     # Empty validator responses can have no supplement object. They still
     # consume a retrieval retry, otherwise the protocol limit is never reached.
     retry_count = int(state.get("retrieval_retry_count", 0)) + (

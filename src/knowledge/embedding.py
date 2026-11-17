@@ -9,13 +9,14 @@ from pathlib import Path
 from threading import Semaphore, Thread
 from time import monotonic, sleep
 from typing import Literal
+import unicodedata
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
 import numpy as np
 
-from src.knowledge.corpus import digest, json_bytes
+from src.knowledge.corpus import digest, document_topic_title, json_bytes
 from src.model_errors import REQUEST_RETRY_POLICY, error_diagnostic
 from src.observability import current_observer
 from src.process_lock import process_lock
@@ -332,7 +333,30 @@ class VectorRetriever:
     def search(self, query, top_k=3):
         return self.search_anchored(query, [], top_k)
 
+    def search_topic(self, query, question, keywords, top_k=3):
+        def normalized(text):
+            return ' '.join(unicodedata.normalize('NFKC', text).casefold().split())
+
+        focus = []
+        filename, focused_query = None, None
+        if self.mode == 'hybrid' and self.lexical.is_document_corpus and top_k > 0:
+            phrases = {normalized(phrase) for phrase in (question, *keywords) if phrase.strip()}
+            files = {doc['filename'] for doc in self.lexical.documents}
+            matches = [(name, title) for name in files if (title := document_topic_title(name)) and normalized(title) in phrases]
+            if len(matches) == 1:
+                filename, title = matches[0]
+                terms = {normalized(keyword): keyword.strip() for keyword in keywords if keyword.strip()}
+                terms.pop(normalized(title), None)
+                terms.pop(normalized(question), None)
+                focused_query = ' '.join([title, *terms.values()])
+                focus = self.lexical.search(focused_query, top_k=min(3, top_k), filename=filename)
+        ranked = self._search(query, [], top_k, focus)
+        return ranked, {'applied': bool(focus), 'filename': filename, 'query': focused_query}
+
     def search_anchored(self, query, entity_hints, top_k=3):
+        return self._search(query, entity_hints, top_k, [])
+
+    def _search(self, query, entity_hints, top_k, focus):
         if top_k <= 0 or not query.strip():
             return []
         query_vector = encode([query], 'query', remaining=self.remaining)[0]
@@ -348,5 +372,10 @@ class VectorRetriever:
                     fused[row] = fused.get(row, 0) + 1 / (60 + rank)
             ranked = sorted(fused, key=lambda row: (-fused[row], row))
             self.lexical.prioritize_anchors(ranked, entity_hints)
+            if focus:
+                promoted = {self.row_by_key[evidence_key(item)]: rank for rank, item in enumerate(focus, 1)}
+                for row, rank in promoted.items():
+                    fused.setdefault(row, 1 / (60 + rank))
+                ranked = [*promoted, *(row for row in ranked if row not in promoted)]
             scores = fused
         return [self.lexical.evidence(row, scores[row]) for row in ranked[:top_k]]
