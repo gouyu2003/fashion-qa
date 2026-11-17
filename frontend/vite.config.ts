@@ -15,6 +15,11 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // The forks pool copies transformed modules to disk, where renames can fail in Windows sandboxes.
+    pool: 'threads',
+    // Keep jsdom suites from competing for CPU on shared runners.
+    maxWorkers: 2,
+    testTimeout: 15_000,
     setupFiles: './src/test/setup.ts',
   },
 })
