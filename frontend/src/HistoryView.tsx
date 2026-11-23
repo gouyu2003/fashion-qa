@@ -17,6 +17,8 @@ import AgentResults from './AgentResults'
 import ProtocolCalls from './ProtocolCalls'
 import ModelDiagnostics from './ModelDiagnostics'
 import AnswerContent from './AnswerContent'
+import FabricComparison from './FabricCard'
+import { collectFabricCards } from './evidenceFacts'
 import type {
   RunEntryPoint,
   RunFilters,
@@ -83,6 +85,16 @@ function formatDuration(value: number | null): string {
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`
+}
+
+function verificationLabel(run: StoredRunRecord): { label: string; color: string } {
+  const result = run.final_state
+  if (result?.verification_applicable === false) return { label: '通用回答', color: 'default' }
+  if (result?.verified) return { label: '验证通过', color: 'success' }
+  if (run.status === 'running') return { label: '验证中', color: 'processing' }
+  if (result?.failure_type === 'conflict') return { label: '资料冲突', color: 'warning' }
+  if (result?.failure_type === 'insufficient') return { label: '资料不足', color: 'warning' }
+  return { label: '未通过', color: 'warning' }
 }
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -315,12 +327,13 @@ export function RunDetailPanel({ detail, experimentName }: { detail: StoredRunDe
           <p className="history-failure-type">失败类型：{result.failure_type}</p>
         ) : null}
       </section>
+      {result?.verified ? <FabricComparison cards={collectFabricCards(result.supporting_evidence)} title="引用面料" /> : null}
+      {result?.verification_applicable !== false ? <RunEvidence result={result} source={source} /> : null}
+      <AgentResults results={result?.expert_results} />
+      <ProtocolCalls calls={result?.protocol_calls} />
       <RunDiagnostics run={run} />
       <TimingDetails timings={run.metrics.timings} />
       <RunTimeline events={events} />
-      <AgentResults results={result?.expert_results} />
-      <ProtocolCalls calls={result?.protocol_calls} />
-      {result?.verification_applicable !== false ? <RunEvidence result={result} source={source} /> : null}
     </article>
   )
 }
@@ -564,6 +577,9 @@ export default function HistoryView() {
                     <span>{formatDate(item.started_at)}</span>
                     <Tag className={`history-status history-status--${item.status}`}>
                       {STATUS_LABELS[item.status]}
+                    </Tag>
+                    <Tag color={verificationLabel(item).color} className="history-verified">
+                      {verificationLabel(item).label}
                     </Tag>
                   </span>
                   <strong>{item.context.question}</strong>

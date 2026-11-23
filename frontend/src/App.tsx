@@ -50,6 +50,8 @@ import EvaluationsView from './EvaluationsView'
 import ProtocolsView from './ProtocolsView'
 import ProtocolCalls from './ProtocolCalls'
 import EvidenceLocation from './EvidenceLocation'
+import FabricComparison from './FabricCard'
+import { collectFabricCards } from './evidenceFacts'
 import AgentResults from './AgentResults'
 import ModelDiagnostics from './ModelDiagnostics'
 import { ActivityDetails, RunDiagnostics, TimingDetails, groupDiagnosticCalls } from './RunInsights'
@@ -83,19 +85,19 @@ const NODE_META: Record<
   planner_v0: {
     shortName: '规划智能体',
     english: 'PLANNER',
-    color: '#0066cc',
+    color: '#0F625F',
     icon: <BranchesOutlined />,
   },
   retriever_v0: {
     shortName: '检索智能体',
     english: 'RETRIEVER',
-    color: '#1f7551',
+    color: '#2A7A5E',
     icon: <SearchOutlined />,
   },
   answer_validator_v0: {
     shortName: '回答与验证智能体',
     english: 'ANSWER · VALIDATOR',
-    color: '#935c10',
+    color: '#8A6420',
     icon: <SafetyCertificateOutlined />,
   },
   expert_v0: { shortName: '领域专家', english: 'EXPERT', color: '#7355a5', icon: <RobotOutlined /> },
@@ -390,12 +392,13 @@ function ResultPanel({ result, durationMs, source }: { result?: RunResult; durat
     return (
       <div className="result-empty">
         <SafetyCertificateOutlined />
-        <span>完成问答后，这里会显示答案、验证结论和证据账本。</span>
+        <span>完成问答后，这里会显示答案、验证结论和支撑证据。</span>
       </div>
     )
   }
 
   const verified = Boolean(result.verified)
+  const fabricCards = verified ? collectFabricCards(result.supporting_evidence) : []
   return (
     <div className="result-content">
       <div className={`answer-hero ${verified ? 'verified' : 'unverified'}`}>
@@ -418,6 +421,21 @@ function ResultPanel({ result, durationMs, source }: { result?: RunResult; durat
         </div>
       </div>
 
+      {fabricCards.length ? <FabricComparison cards={fabricCards} title="引用面料" /> : null}
+
+      {result.supporting_evidence?.length ? <section className="supporting-evidence" aria-label="支撑证据">
+        <div className="result-evidence-heading">
+          <div>
+            <span className="section-kicker">SUPPORTING EVIDENCE</span>
+            <h3>支撑证据</h3>
+          </div>
+          <Tag>{result.supporting_evidence.length} 条</Tag>
+        </div>
+        {result.supporting_evidence.map((evidence, index) => <article key={`${evidence.sq_id}-${evidence.chunk_id ?? index}-${index}`}>
+          <strong>{evidence.source_title}</strong><EvidenceLocation evidence={evidence} source={source} /><p>{evidence.text}</p>
+        </article>)}
+      </section> : null}
+
       <div className="result-evidence-heading">
         <div>
           <span className="section-kicker">EVIDENCE LEDGER</span>
@@ -429,18 +447,11 @@ function ResultPanel({ result, durationMs, source }: { result?: RunResult; durat
       <ProtocolCalls calls={result.protocol_calls} />
       {result.consensus_status && <p>观点状态：{({ agreement: '答案文字一致', disagreement: '仍有不同观点', insufficient: '未形成可用观点' })[result.consensus_status] ?? result.consensus_status} · 与证据审核状态分别记录</p>}
       <EvidenceLedger groups={result.evidence_chunks ?? []} source={source} />
-      {result.supporting_evidence?.length ? <section className="supporting-evidence">
-        <h3>最终支撑证据</h3>
-        {result.supporting_evidence.map((evidence, index) => <article key={`${evidence.sq_id}-${evidence.chunk_id ?? index}-${index}`}>
-          <strong>{evidence.source_title}</strong><EvidenceLocation evidence={evidence} source={source} /><p>{evidence.text}</p>
-        </article>)}
-      </section> : null}
     </div>
   )
 }
 
 export default function App() {
-  const chatActive = !!useMatch('/chat/*')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const navigate = useNavigate()
   const systemsActive = Boolean(useMatch('/systems'))
@@ -626,25 +637,38 @@ export default function App() {
   const completedSteps = run.steps.filter((step) => step.status === 'completed').length
 
   return (
-    <div className={`app-shell${chatActive ? ' app-shell--chat' : ''}`}>
+    <div className="app-shell">
+      <header className="app-mobile-bar">
+        <button className="sidebar-toggle" type="button" aria-label="打开导航菜单" aria-expanded={sidebarOpen} aria-controls="workspace-navigation" onClick={() => setSidebarOpen(true)}>
+          <MenuOutlined />
+        </button>
+        <div className="app-mobile-brand"><strong>服装企划问答工作台</strong></div>
+        <Badge status={systemError ? 'error' : options ? 'success' : 'processing'} text={systemError ? '配置异常' : options ? '在线' : '连接中'} />
+      </header>
+
       <aside className="app-sidebar" data-open={sidebarOpen}>
         <div className="brand-lockup">
           <div className="brand-mark">
             <BotMessageSquareOutlined />
           </div>
           <div>
-            <strong>Multi-Agent QA</strong>
-            <span>可配置多智能体协同问答系统</span>
+            <strong>服装企划问答</strong>
+            <span>趋势 · 面料 · 洗护核对</span>
           </div>
         </div>
-        <button className="sidebar-toggle" type="button" aria-label="切换导航菜单" aria-expanded={sidebarOpen} aria-controls="workspace-navigation" onClick={() => setSidebarOpen(!sidebarOpen)}>
+        <button className="sidebar-toggle" type="button" aria-label="关闭导航菜单" aria-expanded={sidebarOpen} aria-controls="workspace-navigation" onClick={() => setSidebarOpen(false)}>
           <MenuOutlined />
         </button>
         <nav id="workspace-navigation" className="workspace-nav" aria-label="工作区视图">
-          <span className="nav-group-label">使用</span>
-          <NavLink to="/chat" onClick={() => setSidebarOpen(false)}>
-            <span className="nav-icon nav-icon-chat"><MessageOutlined /></span> 连续对话
-          </NavLink>
+          <div className="nav-primary">
+            <NavLink to="/chat" onClick={() => setSidebarOpen(false)}>
+              <span className="nav-icon nav-icon-chat"><MessageOutlined /></span> 问答
+            </NavLink>
+            <NavLink to="/knowledge" onClick={() => setSidebarOpen(false)}>
+              <span className="nav-icon nav-icon-knowledge"><DatabaseOutlined /></span> 资料库
+            </NavLink>
+          </div>
+          <span className="nav-group-label">运行与分析</span>
           <NavLink to="/run" end onClick={() => setSidebarOpen(false)}>
             <span className="nav-icon nav-icon-run"><PlayCircleFilled /></span> 实时运行
           </NavLink>
@@ -661,9 +685,6 @@ export default function App() {
           <NavLink to="/protocols" end onClick={() => setSidebarOpen(false)}>
             <span className="nav-icon nav-icon-protocols"><WorkflowOutlined /></span> 协作协议
           </NavLink>
-          <NavLink to="/knowledge" end onClick={() => setSidebarOpen(false)}>
-            <span className="nav-icon nav-icon-knowledge"><DatabaseOutlined /></span> 知识源
-          </NavLink>
         </nav>
         <div className="system-badges">
           <Tag variant="filled">{shownWorkflow?.workflow_id ?? '等待配置'}</Tag>
@@ -671,6 +692,7 @@ export default function App() {
           <Badge status={systemError ? 'error' : options ? 'success' : 'processing'} text={systemError ? '配置不可用' : options ? '服务正常' : '正在连接'} />
         </div>
       </aside>
+      {sidebarOpen ? <button type="button" className="app-nav-scrim" aria-label="关闭导航菜单" onClick={() => setSidebarOpen(false)} /> : null}
 
       <div className="app-content">
       {/* Keep both editors mounted so navigation preserves their unsaved drafts. */}
@@ -685,44 +707,20 @@ export default function App() {
       }} /></div>
       <div hidden={!protocolsActive}><ProtocolsView active={protocolsActive} disabled={isRunning} onReturnToSystems={() => navigate('/systems')} /></div>
       <Routes>
-        <Route path="/" element={<Navigate to="/run" replace />} />
+        <Route path="/" element={<Navigate to="/chat" replace />} />
         <Route path="/systems" element={null} />
         <Route path="/protocols" element={null} />
         <Route path="/history" element={<HistoryView />} />
         <Route path="/chat/:conversationId?" element={<Suspense fallback={<Skeleton active />}><ChatView /></Suspense>} />
         <Route path="/evaluations" element={<EvaluationsView />} />
         <Route path="/knowledge" element={<KnowledgeView disabled={isRunning} onChanged={refreshOptions} onUse={useKnowledge} />} />
-        <Route path="/run" element={<main className="workspace">
-        <aside className="protocol-column">
-          <ProtocolRail agents={agents} workflow={shownWorkflow} activeNode={run.activeNode} steps={run.steps} />
-
-          <Card className="dataset-card" variant="borderless">
-            <div className="dataset-icon">
-              <DatabaseOutlined />
-            </div>
-            <div>
-              <span className="section-kicker">KNOWLEDGE SOURCE</span>
-              <strong>{shownSource?.name ?? (managedSelection ? '按实例绑定的固定材料' : '等待知识源')}</strong>
-              {shownSource?.is_demo ? <Tag color="orange">演示材料</Tag> : null}
-              <p>
-                {shownSource?.source_type === 'document_corpus'
-                  ? `版本 ${shownSource.version ?? '未记录'} · ${shownSource.file_count ?? '未记录'} 个文件 · ${shownSource.chunk_count ?? '未记录'} 个片段`
-                  : shownSource
-                  ? `${shownSource.level} · ${shownSource.question_type} · ${shownSource.context_count} 个上下文 · ${shownSource.supporting_fact_count} 条支撑事实`
-                  : managedSelection ? `${Object.keys(frozen?.sources ?? {}).length} 个实例已绑定材料` : '正在加载本地知识源'}
-              </p>
-              {shownSource ? <small>来源：{shownSource.source_id}{shownSource.record_id ? ` · 记录：${shownSource.record_id}` : ''}</small> : null}
-            </div>
-          </Card>
-        </aside>
-
-        <div className="main-column">
-          <section className="intro-panel">
+        <Route path="/run" element={<main className="run-workspace">
+          <section className="run-hero">
             <div>
               <span className="section-kicker">QUESTION TO EVIDENCE</span>
               <Title level={1}>观察一次真实的多智能体协作</Title>
               <Paragraph>
-                系统会拆解问题、检索所选知识源，并按照选定的协作流程作答与验证。
+                系统会拆解问题、检索所选资料，并按照选定的协作流程作答与验证。
               </Paragraph>
             </div>
             <div className="run-summary">
@@ -741,70 +739,42 @@ export default function App() {
             </div>
           </section>
 
+          <section className="run-scope-bar" aria-label="本次运行范围">
+            <div>
+              <span>协作流程</span>
+              <strong>{shownWorkflow?.name ?? '等待配置'}</strong>
+            </div>
+            <div>
+              <span>资料范围</span>
+              <strong>{shownSource?.name ?? (managedSelection ? '按实例绑定的固定材料' : '等待资料')}{shownSource?.is_demo ? <Tag color="orange">演示材料</Tag> : null}</strong>
+              <small>
+                {shownSource?.source_type === 'document_corpus'
+                  ? `版本 ${shownSource.version ?? '未记录'} · ${shownSource.file_count ?? '未记录'} 个文件 · ${shownSource.chunk_count ?? '未记录'} 个片段`
+                  : shownSource
+                  ? `${shownSource.level} · ${shownSource.question_type} · ${shownSource.context_count} 个上下文 · ${shownSource.supporting_fact_count} 条支撑事实`
+                  : managedSelection ? `${Object.keys(frozen?.sources ?? {}).length} 个实例已绑定材料` : '正在加载本地资料'}
+              </small>
+            </div>
+            <div>
+              <span>检索</span>
+              <strong>{frozen?.retrieval_mode ?? retrievalMode}</strong>
+            </div>
+          </section>
+
           {systemError ? (
-            <Alert
-              type="error"
-              showIcon
-              message="系统配置加载失败"
-              description={systemError}
-            />
+            <Alert type="error" showIcon message="系统配置加载失败" description={systemError} />
           ) : null}
 
           <Card className="question-card" variant="borderless">
+            <div className="run-question-head">
+              <div>
+                <span className="section-kicker">QUESTION</span>
+                <h2>本轮问题</h2>
+              </div>
+              <Text type="secondary">{(shownSource ?? currentSource)?.source_type === 'document_corpus' ? '支持中文、英文或混合问题；检索以所选资料固定版本为准。' : '当前示例使用英文问题与语料。'}</Text>
+            </div>
             <div className="system-run-banner"><strong>{managedSelection ? `${managedSelection.name} · ${managedSelection.systemVersion ?? `草稿试运行 r${managedSelection.draftRevision}`}` : '临时问答'}</strong>
               {managedSelection ? <Button disabled={isRunning} onClick={() => { setManagedSelection(undefined); setSubmittedSelection(undefined); dispatch({ type: 'clear' }) }}>切回临时问答</Button> : null}
-            </div>
-            {!managedSelection ? <>
-              <div className="configuration-controls">
-              <RetrievalMode value={retrievalMode} disabled={isRunning} onChange={setRetrievalMode} />
-              <label>
-                <span>协作流程</span>
-                <Select
-                  aria-label="协作流程"
-                  value={workflowId || undefined}
-                  options={options?.workflows.map((item) => ({ value: item.workflow_id, label: item.name })) ?? []}
-                  onChange={selectWorkflow}
-                  disabled={isRunning || !options || Boolean(managedSelection)}
-                  placeholder="选择协作流程"
-                />
-              </label>
-              <label>
-                <span>知识源</span>
-                <Select
-                  aria-label="知识源"
-                  value={sourceId || undefined}
-                  options={options?.sources.map((item) => ({ value: item.source_id, label: item.is_demo ? `${item.name}（演示）` : item.name })) ?? []}
-                  onChange={selectSource}
-                  disabled={isRunning || !options || Boolean(managedSelection)}
-                  placeholder="选择知识源"
-                />
-              </label>
-              {(shownSource ?? currentSource)?.source_type === 'document_corpus' ? <label>
-                <span>知识源版本</span>
-                <Select aria-label="知识源版本" value={sourceVersion}
-                  options={currentSource?.versions?.map((version) => ({ value: version, label: `版本 ${version}` }))}
-                  disabled={isRunning || Boolean(managedSelection)}
-                  onChange={(version) => { setSourceVersion(version); setSubmittedSelection(undefined); dispatch({ type: 'clear' }) }} />
-              </label> : null}
-              </div>
-              {retrievalMode !== 'bm25' && currentSource && <EmbeddingIndexControl key={`${sourceId}:${sourceVersion}`}
-                sourceId={sourceId} version={sourceVersion} disabled={isRunning} />}
-            </> : <div className="managed-source-bindings"><p>检索模式 {frozen?.retrieval_mode ?? 'bm25'}</p>{Object.entries(frozen?.sources ?? {}).map(([id, s]) =>
-              <p key={id}>{frozen?.agents[id]?.agent_name ?? id}：{s.name} · {s.version ? `版本 ${s.version}` : '固定内容哈希'}</p>)}</div>}
-            {currentWorkflow ? (
-              <div className="configuration-preview">
-                <strong>{currentWorkflow.name}</strong>
-                <span>方法：{currentWorkflow.method_id} · 入口：{currentWorkflow.entry_node}</span>
-                {currentWorkflow.description ? <p>{currentWorkflow.description}</p> : null}
-                <p>连线：{currentWorkflow.edges.map((edge) => `${edge.source} → ${edge.target}（${edge.route_name}）`).join('；')}</p>
-              </div>
-            ) : null}
-            <div className="question-card-heading">
-              <div>
-                <RobotOutlined />
-                <strong>输入复杂多跳问题</strong>
-              </div>
-              <Text type="secondary">{(shownSource ?? currentSource)?.source_type === 'document_corpus' ? '支持中文、英文或混合问题；检索以所选材料固定版本为准。' : '当前 HotpotQA 示例使用英文问题与语料。'}</Text>
             </div>
             <TextArea
               value={question}
@@ -812,7 +782,7 @@ export default function App() {
               autoSize={{ minRows: 3, maxRows: 6 }}
               maxLength={2000}
               disabled={isRunning}
-              aria-label="多跳问答问题"
+              aria-label="企划问题"
             />
             <div className="question-actions">
               <Text type="secondary">{question.length} / 2000</Text>
@@ -820,11 +790,7 @@ export default function App() {
                 onClick={() => { if (currentSource?.example_question) setQuestion(currentSource.example_question) }}
                 disabled={isRunning || !currentSource?.example_question}
               >填入示例问题</Button>
-              {isRunning ? (
-                <Button icon={<StopOutlined />} onClick={handleStop} danger disabled={!run.runId || run.activity?.status === 'cancelling'}>
-                  {run.activity?.status === 'cancelling' ? '正在停止' : '停止运行'}
-                </Button>
-              ) : (
+              {isRunning ? <Tag icon={<LoadingOutlined spin />} color="processing">协同执行中</Tag> : (
                 <Button
                   type="primary"
                   icon={<PlayCircleFilled />}
@@ -837,64 +803,121 @@ export default function App() {
             </div>
           </Card>
 
+          {isRunning ? <section className="run-live" aria-label="运行阶段">
+            <LoadingOutlined spin />
+            <div>
+              <strong>{run.activeNode ? nodeMeta(run.activeNode).shortName : '准备开始'}</strong>
+              <span>{run.connection || (run.steps.at(-1) ? `已完成 ${completedSteps} 个节点` : '正在建立运行连接')}</span>
+            </div>
+            <Progress percent={Math.min(92, 18 + completedSteps * 25)} showInfo={false} strokeColor="#0F625F" railColor="#E7ECEE" />
+            <Button icon={<StopOutlined />} onClick={handleStop} danger disabled={!run.runId || run.activity?.status === 'cancelling'}>
+              {run.activity?.status === 'cancelling' ? '正在停止' : '停止运行'}
+            </Button>
+          </section> : null}
+
           {submittedSelection && run.status !== 'idle' ? (
             <p className="run-selection">本次运行：{shownWorkflow?.name ?? submittedSelection.workflowId} · {shownSource?.name ?? (managedSelection ? '按实例绑定材料' : submittedSelection.sourceId)}{submittedSelection.sourceVersion ? ` · 版本 ${submittedSelection.sourceVersion}` : ''}</p>
           ) : null}
 
-          <ActivityDetails activity={run.activity} connection={run.connection} />
-          {run.activity && <>
-            <RunDiagnostics run={{ status: run.status, metrics: { agent_usage: groupDiagnosticCalls(run.activity.diagnostic_calls) } }} />
-            <TimingDetails timings={run.activity.timings} />
-          </>}
           {run.error ? <Alert type="error" showIcon message="运行未完成" description={run.error} /> : null}
           {run.status === 'cancelled' ? (
             <Alert type="info" showIcon icon={<PauseCircleOutlined />} message="本次运行已停止，可修改问题后重新开始。" />
           ) : null}
 
-          <div className="content-grid">
-            <Card className="trace-card" variant="borderless">
-              <div className="section-heading">
-                <div>
-                  <span className="section-kicker">LIVE EXECUTION TRACE</span>
-                  <h2>实时执行轨迹</h2>
-                </div>
-                {isRunning ? <Tag icon={<LoadingOutlined spin />} color="processing">运行中</Tag> : null}
+          <Card className="result-card" variant="borderless">
+            <div className="section-heading">
+              <div>
+                <span className="section-kicker">FINAL RESPONSE</span>
+                <h2>答案与验证</h2>
               </div>
-              {isRunning ? (
-                <Progress
-                  percent={Math.min(92, 18 + completedSteps * 25)}
-                  showInfo={false}
-                  strokeColor="#0066cc"
-                  trailColor="#ededf1"
-                  className="run-progress"
-                />
+              {run.result ? (
+                <Tag color={run.result.verified ? 'success' : 'warning'}>
+                  {run.result.verified ? '证据已验证' : run.result.failure_type ?? '未验证'}
+                </Tag>
               ) : null}
-              <ExecutionTrace steps={run.steps} />
-              {run.routes?.length ? <Collapse items={[{ key: 'routes', label: '阶段路由决定', children: run.routes.map((r, i) => <p key={i}>{String(r.stage_id ?? r.node ?? '')} → {String(r.target)} · {String(r.reason)}</p>) }]} /> : null}
-            </Card>
+            </div>
+            <ResultPanel result={run.result} durationMs={run.durationMs} source={shownSource} />
+          </Card>
 
-            <Card className="result-card" variant="borderless">
-              <div className="section-heading">
-                <div>
-                  <span className="section-kicker">FINAL RESPONSE</span>
-                  <h2>答案与验证</h2>
-                </div>
-                {run.result ? (
-                  <Tag color={run.result.verified ? 'success' : 'warning'}>
-                    {run.result.verified ? '证据已验证' : run.result.failure_type ?? '未验证'}
-                  </Tag>
+          <Collapse className="run-details" items={[
+            {
+              key: 'config',
+              label: '配置参数',
+              children: <div className="run-config-panel">
+                {!managedSelection ? <>
+                  <div className="configuration-controls">
+                    <RetrievalMode value={retrievalMode} disabled={isRunning} onChange={setRetrievalMode} />
+                    <label>
+                      <span>协作流程</span>
+                      <Select
+                        aria-label="协作流程"
+                        value={workflowId || undefined}
+                        options={options?.workflows.map((item) => ({ value: item.workflow_id, label: item.name })) ?? []}
+                        onChange={selectWorkflow}
+                        disabled={isRunning || !options || Boolean(managedSelection)}
+                        placeholder="选择协作流程"
+                      />
+                    </label>
+                    <label>
+                      <span>资料</span>
+                      <Select
+                        aria-label="知识源"
+                        value={sourceId || undefined}
+                        options={options?.sources.map((item) => ({ value: item.source_id, label: item.is_demo ? `${item.name}（演示）` : item.name })) ?? []}
+                        onChange={selectSource}
+                        disabled={isRunning || !options || Boolean(managedSelection)}
+                        placeholder="选择资料"
+                      />
+                    </label>
+                    {(shownSource ?? currentSource)?.source_type === 'document_corpus' ? <label>
+                      <span>资料版本</span>
+                      <Select aria-label="知识源版本" value={sourceVersion}
+                        options={currentSource?.versions?.map((version) => ({ value: version, label: `版本 ${version}` }))}
+                        disabled={isRunning || Boolean(managedSelection)}
+                        onChange={(version) => { setSourceVersion(version); setSubmittedSelection(undefined); dispatch({ type: 'clear' }) }} />
+                    </label> : null}
+                  </div>
+                  {retrievalMode !== 'bm25' && currentSource && <EmbeddingIndexControl key={`${sourceId}:${sourceVersion}`}
+                    sourceId={sourceId} version={sourceVersion} disabled={isRunning} />}
+                </> : <div className="managed-source-bindings"><p>检索模式 {frozen?.retrieval_mode ?? 'bm25'}</p>{Object.entries(frozen?.sources ?? {}).map(([id, s]) =>
+                  <p key={id}>{frozen?.agents[id]?.agent_name ?? id}：{s.name} · {s.version ? `版本 ${s.version}` : '固定内容哈希'}</p>)}</div>}
+                {currentWorkflow ? (
+                  <div className="configuration-preview">
+                    <strong>{currentWorkflow.name}</strong>
+                    <span>方法：{currentWorkflow.method_id} · 入口：{currentWorkflow.entry_node}</span>
+                    {currentWorkflow.description ? <p>{currentWorkflow.description}</p> : null}
+                    <p>连线：{currentWorkflow.edges.map((edge) => `${edge.source} → ${edge.target}（${edge.route_name}）`).join('；')}</p>
+                  </div>
                 ) : null}
-              </div>
-              <ResultPanel result={run.result} durationMs={run.durationMs} source={shownSource} />
-            </Card>
-          </div>
-        </div>
-      </main>} />
+              </div>,
+            },
+            {
+              key: 'trace',
+              label: '详细协作轨迹',
+              children: <div className="run-trace-panel">
+                <ProtocolRail agents={agents} workflow={shownWorkflow} activeNode={run.activeNode} steps={run.steps} />
+                <ExecutionTrace steps={run.steps} />
+                {run.routes?.length ? <Collapse items={[{ key: 'routes', label: '阶段路由决定', children: run.routes.map((r, i) => <p key={i}>{String(r.stage_id ?? r.node ?? '')} → {String(r.target)} · {String(r.reason)}</p>) }]} /> : null}
+              </div>,
+            },
+            {
+              key: 'diagnostics',
+              label: '运行诊断',
+              children: <div className="run-diagnostics-panel">
+                <ActivityDetails activity={run.activity} connection={run.connection} />
+                {run.activity && <>
+                  <RunDiagnostics run={{ status: run.status, metrics: { agent_usage: groupDiagnosticCalls(run.activity.diagnostic_calls) } }} />
+                  <TimingDetails timings={run.activity.timings} />
+                </>}
+              </div>,
+            },
+          ]} />
+        </main>} />
         <Route path="*" element={
           <main className="history-workspace">
             <h1>页面不存在</h1>
-            <p>请检查地址，或返回实时运行页面。</p>
-            <Link to="/run">返回实时运行</Link>
+            <p>请检查地址，或返回问答页面。</p>
+            <Link to="/chat">返回问答</Link>
           </main>
         } />
       </Routes>

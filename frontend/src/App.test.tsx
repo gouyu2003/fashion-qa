@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { BrowserRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { getAgentTemplates, protocolRequest, getKnowledgeChunks, getKnowledgeSources, getManagedSystems, getExperiments, getRunDetail, getRuns, getRunsExportUrl, getRunStats, getSystemInfo, getSystemOptions, streamQuestion, getPendingRun, resumeBackgroundRun } from './api'
+import { getAgentTemplates, protocolRequest, getKnowledgeChunks, getKnowledgeSource, getKnowledgeSources, getManagedSystems, getExperiments, getRunDetail, getRuns, getRunsExportUrl, getRunStats, getSystemInfo, getSystemOptions, streamQuestion, getPendingRun, resumeBackgroundRun } from './api'
 import catalog from './protocolCatalog.fixture.json'
 import type { KnowledgeSource, ManagedSystem, RunStatsSummary, StoredRunDetail, StoredRunRecord, SystemInfo, SystemOptions } from './types'
 
@@ -12,6 +12,7 @@ vi.mock('./api', () => ({
   getManagedSystems: vi.fn(async () => ({ items: [] })),
   getAgentTemplates: vi.fn(async () => ({ items: [] })),
   getKnowledgeSources: vi.fn(async () => ({ items: [] })),
+  getKnowledgeSource: vi.fn(),
   getKnowledgeChunks: vi.fn(),
   getSystemInfo: vi.fn(),
   getSystemOptions: vi.fn(),
@@ -143,6 +144,10 @@ async function navigateHistory(delta: number) {
   })
 }
 
+async function openRunConfig() {
+  fireEvent.click(await screen.findByText('配置参数'))
+}
+
 describe('App', () => {
   afterEach(cleanup)
 
@@ -168,7 +173,7 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { name: '观察一次真实的多智能体协作' })).toBeInTheDocument()
     expect(await screen.findByText('服务正常')).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: '多跳问答问题' })).toHaveValue('')
+    expect(screen.getByRole('textbox', { name: '企划问题' })).toHaveValue('')
     expect(screen.getByRole('button', { name: /开始协同问答/ })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '填入示例问题' }))
     expect(screen.getByDisplayValue('A multi-hop question?')).toBeInTheDocument()
@@ -176,18 +181,18 @@ describe('App', () => {
     expect(screen.getByText('hard · bridge · 10 个上下文 · 3 条支撑事实')).toBeInTheDocument()
   })
 
-  it('redirects the root to the run page without adding a history entry', async () => {
+  it('redirects the root to the chat page without adding a history entry', async () => {
     const length = window.history.length
     renderApp('/')
-    await waitFor(() => expect(window.location.pathname).toBe('/run'))
+    await waitFor(() => expect(window.location.pathname).toBe('/chat'))
     expect(window.history.length).toBe(length)
-    expect(screen.getByRole('link', { name: /实时运行/ })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: /问答/ })).toHaveAttribute('aria-current', 'page')
   })
 
   it.each([
     ['/run', '实时运行', '观察一次真实的多智能体协作'],
     ['/history', '运行历史', '每次运行，都有迹可循'],
-    ['/knowledge', '知识源', '知识源'],
+    ['/knowledge', '资料库', '资料库'],
     ['/systems', '我的系统', '我的系统'],
     ['/protocols', '协作协议', '我的协作协议'],
   ])('opens %s directly with the matching navigation selected', async (path, label, heading) => {
@@ -201,7 +206,7 @@ describe('App', () => {
   it('supports back and forward navigation while preserving the entered question', async () => {
     renderApp()
     await screen.findByText('服务正常')
-    fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'Keep this question' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'Keep this question' } })
     fireEvent.click(screen.getByRole('link', { name: /我的系统/ }))
     expect(window.location.pathname).toBe('/systems')
     await navigateHistory(-1)
@@ -212,13 +217,13 @@ describe('App', () => {
     expect(screen.getByRole('link', { name: /我的系统/ })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('shows a not-found page for an unknown path and links back to the run page', async () => {
+  it('shows a not-found page for an unknown path and links back to the chat page', async () => {
     renderApp('/missing')
     expect(screen.getByRole('heading', { name: '页面不存在' })).toBeVisible()
     expect(screen.getByRole('navigation').querySelector('[aria-current="page"]')).toBeNull()
-    fireEvent.click(screen.getByRole('link', { name: '返回实时运行' }))
-    expect(window.location.pathname).toBe('/run')
-    expect(await screen.findByRole('heading', { name: '观察一次真实的多智能体协作' })).toBeVisible()
+    fireEvent.click(screen.getByRole('link', { name: '返回问答' }))
+    expect(window.location.pathname).toBe('/chat')
+    expect(await screen.findByRole('heading', { name: '新的问答' })).toBeVisible()
   })
 
   it('restores the system filter from the URL after remounting and synchronizes history changes', async () => {
@@ -249,6 +254,7 @@ describe('App', () => {
       versions: [{ version: 1, status: 'ready', created_at: 'now', file_count: 1, chunk_count: 1, files: [], error: null }],
     }
     vi.mocked(getKnowledgeSources).mockResolvedValue({ items: [source] })
+    vi.mocked(getKnowledgeSource).mockResolvedValue(source)
     vi.mocked(getKnowledgeChunks).mockResolvedValue({ items: [], total: 0, limit: 10, offset: 0 })
     vi.mocked(getSystemOptions).mockResolvedValue({ ...systemOptions, sources: [...systemOptions.sources, {
       source_id: 'user_notes', name: source.name, source_type: 'document_corpus', is_demo: false,
@@ -258,10 +264,10 @@ describe('App', () => {
     renderApp('/knowledge')
     await screen.findByText('服务正常')
     fireEvent.click(await screen.findByRole('button', { name: /English notes/ }))
-    await waitFor(() => expect(screen.getByRole('button', { name: '用于问答' })).toBeEnabled())
-    fireEvent.click(screen.getByRole('button', { name: '用于问答' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '用于实时运行' })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: '用于实时运行' }))
     expect(window.location.pathname).toBe('/run')
-    if (!(screen.getByRole('textbox', { name: '多跳问答问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'A multi-hop question?' } })
+    if (!(screen.getByRole('textbox', { name: '企划问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'A multi-hop question?' } })
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     await waitFor(() => expect(streamQuestion).toHaveBeenCalledWith(
       expect.any(String), expect.any(Function), expect.any(AbortSignal),
@@ -280,7 +286,7 @@ describe('App', () => {
     })
     renderApp()
     await screen.findByText('服务正常')
-    if (!(screen.getByRole('textbox', { name: '多跳问答问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'A multi-hop question?' } })
+    if (!(screen.getByRole('textbox', { name: '企划问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'A multi-hop question?' } })
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     fireEvent.click(screen.getByRole('link', { name: /运行历史/ }))
     await screen.findByText('Chief of Protocol')
@@ -349,7 +355,7 @@ describe('App', () => {
     expect(screen.getByText('多个模型')).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: '知识源' })).not.toBeInTheDocument()
     const start = screen.getByRole('button', { name: /开始协同问答/ })
-    fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'A multi-hop question?' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'A multi-hop question?' } })
     expect(start).toBeEnabled()
     fireEvent.click(start)
     await waitFor(() => expect(streamQuestion).toHaveBeenCalledWith(expect.any(String), expect.any(Function), expect.any(AbortSignal),
@@ -446,7 +452,7 @@ describe('App', () => {
   it('shows the default selection and records its IDs in the stream request', async () => {
     renderApp()
     expect(await screen.findByText('服务正常')).toBeInTheDocument()
-    if (!(screen.getByRole('textbox', { name: '多跳问答问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'A multi-hop question?' } })
+    if (!(screen.getByRole('textbox', { name: '企划问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'A multi-hop question?' } })
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     expect(streamQuestion).toHaveBeenCalledWith(
       'A multi-hop question?', expect.any(Function), expect.any(AbortSignal),
@@ -473,7 +479,7 @@ describe('App', () => {
     })
     renderApp()
     await screen.findByText('服务正常')
-    if (!(screen.getByRole('textbox', { name: '多跳问答问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'A multi-hop question?' } })
+    if (!(screen.getByRole('textbox', { name: '企划问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'A multi-hop question?' } })
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     expect((await screen.findAllByText('待验证')).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/句子索引 0|sentence #0/).length).toBeGreaterThan(0)
@@ -482,13 +488,14 @@ describe('App', () => {
   it('switches source without overwriting a typed question', async () => {
     renderApp()
     await screen.findByText('服务正常')
-    fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'My own question?' } })
+    fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'My own question?' } })
+    await openRunConfig()
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '知识源' }))
     fireEvent.click(await screen.findByText('演示语料（演示）', { selector: '.ant-select-item-option-content' }))
 
     expect(screen.getByDisplayValue('My own question?')).toBeInTheDocument()
     expect(screen.getByText('演示材料')).toBeInTheDocument()
-    if (!(screen.getByRole('textbox', { name: '多跳问答问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'A multi-hop question?' } })
+    if (!(screen.getByRole('textbox', { name: '企划问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'A multi-hop question?' } })
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     await waitFor(() => expect(streamQuestion).toHaveBeenCalledWith(
       'My own question?', expect.any(Function), expect.any(AbortSignal),
@@ -499,11 +506,13 @@ describe('App', () => {
   it('switches to the fixed workflow without showing feedback routes', async () => {
     renderApp()
     await screen.findByText('服务正常')
+    await openRunConfig()
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '协作流程' }))
     fireEvent.click(await screen.findByText('固定三节点流程', { selector: '.ant-select-item-option-content' }))
-    expect(screen.getByText('固定顺序执行一次，验证后结束。')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('详细协作轨迹'))
+    expect(await screen.findByText('固定顺序执行一次，验证后结束。')).toBeInTheDocument()
     expect(screen.queryByText('返回检索')).not.toBeInTheDocument()
-    if (!(screen.getByRole('textbox', { name: '多跳问答问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'A multi-hop question?' } })
+    if (!(screen.getByRole('textbox', { name: '企划问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'A multi-hop question?' } })
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     await waitFor(() => expect(streamQuestion).toHaveBeenCalledWith(
       'A multi-hop question?', expect.any(Function), expect.any(AbortSignal),
@@ -519,7 +528,8 @@ describe('App', () => {
     })
     renderApp()
     await screen.findByText('服务正常')
-    if (!(screen.getByRole('textbox', { name: '多跳问答问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'A multi-hop question?' } })
+    await openRunConfig()
+    if (!(screen.getByRole('textbox', { name: '企划问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'A multi-hop question?' } })
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     expect(await screen.findByText(/本次运行：反馈重试流程/)).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: '协作流程' })).toBeDisabled()
@@ -557,7 +567,7 @@ describe('App', () => {
     expect(configuration.getByText('知识源 ID').parentElement).toHaveTextContent('user_notes')
     expect(configuration.getByText('知识源版本').parentElement).toHaveTextContent('1')
     const evidence = within(screen.getByLabelText('运行证据'))
-    expect(evidence.getByTitle('知识源 ID：user_notes')).toHaveTextContent('阶段3测试—Aurora Institute')
+    expect(evidence.getByTitle('资料 ID：user_notes')).toHaveTextContent('阶段3测试—Aurora Institute')
     expect(evidence.getByText(/第 8–10 行/)).toHaveTextContent('版本 1 · notes.md')
     expect(screen.queryByText('Renamed current source')).not.toBeInTheDocument()
   })
@@ -580,17 +590,18 @@ describe('App', () => {
     })
     renderApp()
     await screen.findByText('服务正常')
+    await openRunConfig()
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '知识源' }))
     fireEvent.click(await screen.findByText('User notes', { selector: '.ant-select-item-option-content' }))
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '知识源版本' }))
     fireEvent.click(await screen.findByText('版本 1', { selector: '.ant-select-item-option-content' }))
     expect(screen.getByText('版本 1 · 1 个文件 · 3 个片段')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /填入示例问题/ })).toBeDisabled()
-    if (!(screen.getByRole('textbox', { name: '多跳问答问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '多跳问答问题' }), { target: { value: 'A multi-hop question?' } })
+    if (!(screen.getByRole('textbox', { name: '企划问题' }) as HTMLTextAreaElement).value) fireEvent.change(screen.getByRole('textbox', { name: '企划问题' }), { target: { value: 'A multi-hop question?' } })
     fireEvent.click(screen.getByRole('button', { name: /开始协同问答/ }))
     expect(streamQuestion).toHaveBeenCalledWith('A multi-hop question?', expect.any(Function), expect.any(AbortSignal),
       { workflowId: 'multi_hop_qa_v0', sourceId: 'user_notes', sourceVersion: 1, retrievalMode: 'hybrid' })
-    expect(await screen.findByTitle('知识源 ID：user_notes')).toHaveTextContent('User notes')
+    expect(await screen.findByTitle('资料 ID：user_notes')).toHaveTextContent('User notes')
     expect(screen.getByText(/第 1–2 行/)).toHaveTextContent('版本 1 · notes.md')
   })
   it('restores a fixed source even when completion clears storage before options finish loading', async () => {
@@ -610,7 +621,7 @@ describe('App', () => {
     await act(async () => { resolveOptions(systemOptions) })
     expect(await screen.findByText(/本次运行：.*固定中文源/)).toBeInTheDocument()
     expect(screen.getByText(/支持中文、英文或混合问题/)).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: '多跳问答问题' })).toHaveValue('中文恢复问题')
+    expect(screen.getByRole('textbox', { name: '企划问题' })).toHaveValue('中文恢复问题')
     expect(streamQuestion).not.toHaveBeenCalled()
   })
 })

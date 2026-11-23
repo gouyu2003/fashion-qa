@@ -122,8 +122,9 @@ export default function ProtocolsView({ disabled, active = true, onReturnToSyste
               <span className="ws-overline">{selected ? (selected.archived ? '已归档协议' : '编辑协议草稿') : '新建协议'}</span>
               <h2>{fields.name.trim() || '未命名协议'}</h2>
               <div className="ws-badges">
-                {dirty ? <Tag color="orange">有未保存修改</Tag> : selected ? <Tag>已保存</Tag> : null}
-                {selected ? <Tag>r{selected.draft_revision}</Tag> : null}
+                {dirty ? <Tag color="orange">有未保存修改</Tag> : selected ? <Tag>已保存草稿</Tag> : <Tag color="gold">新草稿</Tag>}
+                {selected ? <Tag color="gold">草稿 r{selected.draft_revision}</Tag> : null}
+                {selected?.versions.length ? <Tag color="green">已发布 {selected.versions[0].version}</Tag> : null}
                 {selected?.archived ? <Tag>已归档</Tag> : null}
                 {!capability ? <Tag color="red">编辑能力不可用</Tag> : null}
               </div>

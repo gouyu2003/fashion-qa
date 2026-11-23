@@ -203,9 +203,9 @@ export default function SystemsView({ options, disabled, onUse, onHistory, activ
             className={`ws-rail-item${selected?.system_id === item.system_id ? ' is-active' : ''}`} onClick={() => adopt(item)}>
             <span className="ws-rail-copy">
               <strong>{item.draft.name}</strong>
-              <small>草稿 r{item.draft_revision} · {item.versions[0]?.version ?? '未发布'}</small>
+              <small>草稿 r{item.draft_revision} · {item.versions.length ? `最新发布 ${item.versions[0].version}` : '尚未发布'}</small>
             </span>
-            <span className={`ws-rail-flag${item.versions.length ? ' is-live' : ''}`}>{item.versions.length ? '已发布' : '草稿'}</span>
+            <span className={`ws-rail-flag${item.versions.length ? ' is-live' : ''}`}>{item.versions.length ? `已发布 ${item.versions[0].version}` : '仅草稿'}</span>
           </button>)}
         </div> : <p className="ws-rail-empty">{term ? '没有匹配的系统。' : loading ? '正在加载系统…' : '尚未创建系统'}</p>}
       </aside>
@@ -221,8 +221,9 @@ export default function SystemsView({ options, disabled, onUse, onHistory, activ
               <span className="ws-overline">{selected ? '编辑系统草稿' : '创建系统草稿'}</span>
               <h2>{fields.name.trim() || '未命名系统'}</h2>
               <div className="ws-badges">
-                {dirty ? <Tag color="orange">有未保存修改</Tag> : selected ? <Tag>已保存</Tag> : null}
-                {selected ? <Tag>草稿 r{selected.draft_revision}</Tag> : null}
+                {selected ? <Tag color="gold">草稿 r{selected.draft_revision}</Tag> : <Tag color="gold">新草稿</Tag>}
+                {selected?.versions.length ? <Tag color="green">已发布 {selected.versions[0].version}</Tag> : <Tag>尚未发布</Tag>}
+                {dirty ? <Tag color="orange">有未保存修改</Tag> : null}
               </div>
             </div>
             <div className="ws-toolbar-actions">

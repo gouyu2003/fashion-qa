@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatView from './ChatView'
@@ -43,8 +43,7 @@ describe('continuous chat', () => {
   it('keeps a new chat local and respects IME and Shift+Enter before submitting', async () => {
     show()
     expect(createConversation).not.toHaveBeenCalled()
-    fireEvent.mouseDown(await screen.findByRole('combobox', { name: '问答系统' }))
-    fireEvent.click(await screen.findByText('图书馆系统'))
+    expect((await screen.findAllByText('图书馆系统 · v1')).length).toBeGreaterThan(0)
     const input = screen.getByRole('textbox', { name: '聊天消息' })
     fireEvent.change(input, { target: { value: '研究生能借多少本书？' } })
     fireEvent.keyDown(input, { key: 'Enter', isComposing: true, keyCode: 229 })
@@ -113,6 +112,53 @@ describe('continuous chat', () => {
     expect(container.querySelector('strong')?.textContent).toBeTruthy()
     expect(container.querySelector('pre code')).toHaveTextContent('print(30)')
     expect(container.querySelector('script')).toBeNull()
-    expect(screen.getByRole('button', { name: '查看本轮运行' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '本轮运行' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /查看引用/ })).toBeDisabled()
+  })
+
+  it('opens saved citations with file, version, line numbers and fabric comparisons', async () => {
+    const fab001 = `# 模拟面料卡 FAB-001
+
+- **卡号** FAB-001
+- **面料名称** 棉混纺府绸
+- **颜色** 乳白色
+- **成分** 65% 棉、35% 聚酯纤维
+- **克重** 125 g/m²
+- **洗护条件** 可机洗，最高 30°C，轻柔程序`
+    const fab002 = `# 模拟面料卡 FAB-002
+
+- **卡号** FAB-002
+- **面料** 莱赛尔棉斜纹
+- **颜色** 乳白色
+- **成分** 55% 莱赛尔、45% 棉
+- **克重** 130 g/m²
+- **洗护条件** 仅手洗，最高 30°C。`
+    const assistant: ChatMessage = {
+      ...message('a', '两款府绸都可以做通勤衬衫，但洗护条件不同。'),
+      result: {
+        verified: true,
+        supporting_evidence: [
+          { sq_id: 'sq_1', text: fab001, source_title: '02-模拟面料卡-FAB-001.md', source_id: 'fashion',
+            source_version: 1, filename: '02-模拟面料卡-FAB-001.md', chunk_id: 'c1', line_start: 1, line_end: 9 },
+          { sq_id: 'sq_2', text: fab002, source_title: '04-模拟面料卡-FAB-002.md', source_id: 'fashion',
+            source_version: 1, filename: '04-模拟面料卡-FAB-002.md', chunk_id: 'c2', line_start: 1, line_end: 10 },
+        ],
+      },
+    }
+    vi.mocked(getChatMessages).mockResolvedValue({ items: [assistant] })
+    show('/chat/a')
+    await screen.findByText('两款府绸都可以做通勤衬衫，但洗护条件不同。')
+    expect(screen.getByText('FAB-001')).toBeInTheDocument()
+    expect(screen.getByText('FAB-002')).toBeInTheDocument()
+    expect(screen.getByText('可机洗')).toBeInTheDocument()
+    expect(screen.getByText('仅手洗')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /查看引用/ }))
+    const heading = await screen.findByRole('heading', { name: '引用 · 2 条' })
+    const panel = within(heading.closest('.citation-panel') as HTMLElement)
+    expect(panel.getByText(/本轮保存的支撑证据/)).toBeInTheDocument()
+    expect(panel.getAllByText('02-模拟面料卡-FAB-001.md', { exact: false }).length).toBeGreaterThan(0)
+    expect(panel.getByText(/版本 1 · 02-模拟面料卡-FAB-001\.md · 第 1–9 行/)).toBeInTheDocument()
+    expect(panel.getByText('65% 棉、35% 聚酯纤维')).toBeInTheDocument()
   })
 })

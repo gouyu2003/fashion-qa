@@ -4,7 +4,7 @@ import { CheckOutlined, CopyOutlined, MenuUnfoldOutlined } from './Icons'
 import { Button, Segmented, Tooltip } from 'antd'
 
 const ROLE_COLORS: Record<string, string> = {
-  planner: '#0066cc', retriever: '#1f7551', answer_validator: '#935c10', expert: '#7355a5',
+  planner: '#0F625F', retriever: '#2A7A5E', answer_validator: '#8A6420', expert: '#5D6C8A',
 }
 
 const FOLD_LINES = 9
