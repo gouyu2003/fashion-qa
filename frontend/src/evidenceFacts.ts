@@ -20,6 +20,7 @@ export interface FabricCardData extends DocumentLocation {
   color?: string
   composition?: string
   weight?: string
+  width?: string
   handfeel?: string
   sheerness?: string
   care?: string
@@ -77,9 +78,10 @@ export function documentKind(filename?: string, text = ''): DocumentKind {
 
 export function careStatusOf(care?: string): CareStatus {
   if (!care) return 'pending'
-  if (/待[^。；\n]{0,24}确认|待确认/.test(care)) return 'pending'
-  if (/可机洗/.test(care)) return 'machine'
-  if (/手洗/.test(care)) return 'hand'
+  if (/(?:待|需)[^。；\n]{0,24}(?:确认|核实)|是否可机洗/.test(care)) return 'pending'
+  if (/(?:仅|只(?:能|可)?|限)\s*手洗|^手洗(?:[，。；、\s,]|$)/.test(care)) return 'hand'
+  if (/不可机洗|不能机洗|禁止机洗|勿机洗/.test(care)) return /(?:^|[，；、\s])可手洗/.test(care) ? 'hand' : 'pending'
+  if (/可机洗|可以机洗/.test(care)) return 'machine'
   return 'pending'
 }
 
@@ -97,6 +99,7 @@ export function parseFabric(text: string, location: DocumentLocation): FabricCar
     color: plain(field(text, ['颜色', '色号'])),
     composition: plain(field(text, ['成分', '纤维成分'])),
     weight: plain(field(text, ['克重', '平方米克重'])),
+    width: plain(field(text, ['门幅', '幅宽', '有效门幅'])),
     handfeel: plain(field(text, ['手感与透感', '手感'])),
     sheerness: plain(field(text, ['透感'])),
     care,
@@ -129,6 +132,7 @@ function mergeFabric(target: FabricCardData, next: FabricCardData): FabricCardDa
     color: target.color ?? next.color,
     composition: target.composition ?? next.composition,
     weight: target.weight ?? next.weight,
+    width: target.width ?? next.width,
     handfeel: target.handfeel ?? next.handfeel,
     sheerness: target.sheerness ?? next.sheerness,
     care: target.care ?? next.care,

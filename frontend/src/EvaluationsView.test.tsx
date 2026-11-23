@@ -354,7 +354,7 @@ it('copies a task into new editable conditions while restoring its fixed evaluat
   fireEvent.click(await screen.findByRole('button', { name: '复制为新实验配置' }))
   await waitFor(() => expect(screen.getByRole('textbox', { name: '任务名称' })).toHaveValue('Copied experiment'))
   expect(screen.getByRole('spinbutton', { name: '评测题数' })).toBeDisabled()
-  expect(screen.getByText('冻结评价清单 · 2 题')).toBeInTheDocument()
+  expect(await screen.findByText('冻结评价清单 · 2 题')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '下一步' }))
   fireEvent.click(screen.getByRole('button', { name: '下一步' }))
   expect(screen.getByRole('textbox', { name: '评测模型' })).toHaveValue('restored-model')

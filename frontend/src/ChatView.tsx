@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { Alert, Button, Drawer, Dropdown, Input, Modal, Select, Skeleton, Tag } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
-import { DeleteOutlined, EditOutlined, EllipsisOutlined, MenuOutlined, PlusOutlined } from '@ant-design/icons'
-import { CornerDownLeft, Square } from 'lucide-react'
+import { DeleteOutlined, EditOutlined, EllipsisOutlined, PlusOutlined } from '@ant-design/icons'
+import { ArrowUp, ArrowUpRight, BookOpen, FileText, Layers, PanelLeft, Square } from 'lucide-react'
 import AnswerContent from './AnswerContent'
-import CitationPanel from './CitationPanel'
+import CitationPanel, { citationPanelId } from './CitationPanel'
 import FabricComparison from './FabricCard'
-import { collectFabricCards } from './evidenceFacts'
+import { collectFabricCards, documentKind } from './evidenceFacts'
 import { cancelBackgroundRun, followBackgroundRun, getManagedSystems, getRunDetail } from './api'
 import { RunDetailPanel } from './HistoryView'
 import { ChatApiError, clearPendingChat, createConversation, deleteConversation, getChatMessages, getConversation, listConversations,
@@ -25,23 +25,28 @@ const refLabel = (ref: Conversation['system_ref']) => `${ref.name} · ${ref.kind
 const EXAMPLES = [
   {
     key: 'trend',
+    scene: '趋势研判',
     title: '查本季趋势',
     hint: '通勤方向的风格与配色依据',
     question: '2027 春夏通勤女装的趋势方向是什么？有哪些风格和配色依据？',
   },
   {
     key: 'fabric',
+    scene: '选料比对',
     title: '比较衬衫面料',
     hint: '成分、克重与手感的取舍',
     question: '从资料里的面料卡中挑两款适合做通勤衬衫的，比较成分、克重和手感。',
   },
   {
     key: 'care',
+    scene: '供应链核实',
     title: '核对洗护条件',
     hint: '可机洗、仅手洗还是待确认',
-    question: '这几款面料里，哪些可以机洗？哪些只能手洗，或者仍需供应商确认？',
+    question: '资料里的面料，哪些可以机洗？哪些只能手洗，或者仍需供应商确认？',
   },
 ]
+const CARE_FOLLOW_UP = '刚才比较的面料中，哪些可以机洗？哪些只能手洗，或者仍需供应商确认？'
+const SUPPLIER_FOLLOW_UP = { title: '整理供应商核实清单', question: '把刚才仍待确认的洗护条件整理成一份供应商核实清单，并标出对应面料。' }
 
 function runnableVersions(system: ManagedSystem) {
   return system.versions.filter((doc) => Boolean(doc.version) && !!doc.snapshot.workflow_spec && !doc.snapshot.configuration_errors?.length)
@@ -62,25 +67,39 @@ function snapshotSources(snapshot?: SystemDocument['snapshot']) {
   return snapshot.source ? [`${snapshot.source.name}${snapshot.source.version ? ` · v${snapshot.source.version}` : ''}`] : []
 }
 
-function useInlineCitations() {
-  const query = '(min-width: 1280px)'
-  const [inline, setInline] = useState(() => (typeof window === 'undefined' || !window.matchMedia ? true : window.matchMedia(query).matches))
+function useDesktopColumn(query: string) {
+  const [visible, setVisible] = useState(() => (typeof window === 'undefined' || !window.matchMedia ? true : window.matchMedia(query).matches))
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return
     const media = window.matchMedia(query)
-    const update = () => setInline(media.matches)
+    const update = () => setVisible(media.matches)
     update()
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
-  }, [])
-  return inline
+  }, [query])
+  return visible
 }
 
-function MessageBody({ message, onDetail, onCitations, citationsOpen }: {
+function demoFollowUps(messages: ChatMessage[], answer: ChatMessage | undefined) {
+  if (answer?.role !== 'assistant' || answer.status !== 'completed' || !answer.content || answer.context.intent === 'clarification') return []
+  const asked = new Set(messages.filter(message => message.role === 'user').map(message => message.content))
+  if (asked.has(SUPPLIER_FOLLOW_UP.question)) return []
+  const [, fabric, care] = EXAMPLES
+  if (asked.has(care.question) || asked.has(CARE_FOLLOW_UP)) return [SUPPLIER_FOLLOW_UP]
+  const kinds = answer.result.supporting_evidence?.map(item => documentKind(item.filename, item.text)) ?? []
+  if (asked.has(fabric.question) || kinds.includes('fabric')) return [{ ...care, question: CARE_FOLLOW_UP }]
+  if (asked.has(EXAMPLES[0].question) || kinds.includes('trend')) return [fabric, care]
+  return []
+}
+
+function MessageBody({ message, onDetail, onCitations, citationsOpen, activeCitation, followUps, onFollowUp }: {
   message: ChatMessage
   onDetail: (id: string) => void
-  onCitations: (message: ChatMessage) => void
+  onCitations: (message: ChatMessage, trigger: HTMLElement, index?: number) => void
   citationsOpen: boolean
+  activeCitation?: number
+  followUps: { title: string; question: string }[]
+  onFollowUp: (text: string) => void
 }) {
   const cards = message.result?.verified === true ? collectFabricCards(message.result.supporting_evidence) : []
   const citationCount = message.result?.supporting_evidence?.length ?? 0
@@ -88,21 +107,28 @@ function MessageBody({ message, onDetail, onCitations, citationsOpen }: {
     <div className="chat-message-label">{message.role === 'user' ? '你' : '服装企划助手'}</div>
     <div className="chat-message-content">
       {message.role === 'user' ? <p className="chat-user-text">{message.content}</p> : <>
-        {message.content ? <AnswerContent result={message.result} content={message.content} intent={message.context.intent}
-            showStatus={message.status === 'completed' || !!message.result.response_parts?.length} />
+        {message.content || citationCount > 0 ? <AnswerContent result={message.result} content={message.content} intent={message.context.intent}
+            showStatus={message.status === 'completed' || !!message.result.response_parts?.length}
+            onCitationSelect={(index, trigger) => onCitations(message, trigger, index)} activeCitation={activeCitation} />
           : <p className="chat-muted">{message.status === 'running' ? '正在拆解问题并核对资料…' : message.error || '本轮未生成回答。'}</p>}
         {message.status === 'completed' && cards.length ? <FabricComparison cards={cards} /> : null}
         {message.error && message.content ? <Alert type="error" title={message.error} /> : null}
         <div className="chat-answer-actions">
           {message.status !== 'completed' ? <Tag>{statusLabel[message.status]}</Tag> : null}
-          <Button type="text" size="small" className="chat-answer-action" onClick={() => onCitations(message)}
-            aria-expanded={citationsOpen} disabled={!citationCount}>
+          <Button type="text" size="small" className="chat-answer-action" onClick={event => onCitations(message, event.currentTarget)}
+            aria-expanded={citationsOpen} aria-controls={citationsOpen ? citationPanelId : undefined} disabled={!citationCount}>
             <span>查看引用</span>{citationCount ? <span className="chat-action-count">{citationCount}</span> : null}
           </Button>
           <Button type="text" size="small" className="chat-answer-action" onClick={() => onDetail(message.run_id)}>
             本轮运行
           </Button>
         </div>
+        {followUps.length ? <section className="chat-followups" aria-label="下一步追问">
+          <h3>下一步追问</h3>
+          <ul>{followUps.map(example => <li key={example.question}>
+            <button type="button" onClick={() => onFollowUp(example.question)}>{example.title}<ArrowUpRight size={13} aria-hidden="true" /></button>
+          </li>)}</ul>
+        </section> : null}
       </>}
     </div>
   </article>
@@ -133,7 +159,7 @@ export default function ChatView() {
   const [connection, setConnection] = useState('')
   const [stopping, setStopping] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [citationMessage, setCitationMessage] = useState<ChatMessage>()
+  const [citationSelection, setCitationSelection] = useState<{ messageId: string; index?: number }>()
   const [editing, setEditing] = useState<Conversation>()
   const [title, setTitle] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
@@ -147,7 +173,10 @@ export default function ChatView() {
   const composer = useRef<TextAreaRef>(null)
   const followBottom = useRef(true)
   const readingPosition = useRef(0)
-  const inlineCitations = useInlineCitations()
+  const citationTrigger = useRef<HTMLElement>(null)
+  const desktopSidebar = useDesktopColumn('(min-width: 1025px)')
+  const inlineCitations = useDesktopColumn('(min-width: 1280px)')
+  const citationMessage = messages.find(message => message.message_id === citationSelection?.messageId)
 
   const refreshList = useCallback(async (signal?: AbortSignal) => {
     try { setList((await listConversations(signal)).items); setListError('') }
@@ -213,7 +242,7 @@ export default function ChatView() {
   useEffect(() => {
     const ctrl = new AbortController()
     setConversation(undefined); setMessages([]); setError(''); setBusyRun(undefined); setConnection(''); setStopping(false)
-    setCitationMessage(undefined)
+    setCitationSelection(undefined)
     setQuestion(localStorage.getItem(draftKey(conversationId)) || '')
     followBottom.current = true
     const saved = readPendingChat(conversationId)
@@ -247,7 +276,8 @@ export default function ChatView() {
   }, [activeRun, conversationId, loadChat, refreshList])
 
   useEffect(() => {
-    if (followBottom.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
+    if (scroller.current && !messages.length) scroller.current.scrollTop = 0
+    else if (followBottom.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
   }, [messages, progress])
 
   useEffect(() => {
@@ -270,8 +300,12 @@ export default function ChatView() {
   const activeDocRunnable = !!selectedDoc && !!selectedDoc.snapshot.workflow_spec && !selectedDoc.snapshot.configuration_errors?.length
   const selection: ChatSelection | undefined = activeSystemId && activeVersion && activeDocRunnable ? { system_id: activeSystemId,
     ...(activeVersion.startsWith('draft:') ? { draft_revision: Number(activeVersion.slice(6)) } : { system_version: activeVersion }) } : undefined
-  const snapshot = conversation?.config_snapshot || selectedDoc?.snapshot
+  const snapshot = conversationId ? conversation?.config_snapshot : selectedDoc?.snapshot
   const sourceNames = snapshotSources(snapshot)
+  const sourceStatus = sourceNames.length ? `已绑定 ${sourceNames.length} 个知识源` : '尚未绑定知识源'
+  const composerDisabled = submitting || !!pending || loading || (!!conversationId && !conversation)
+  const latestMessage = messages.at(-1)
+  const followUps = composerDisabled ? [] : demoFollowUps(messages, latestMessage)
   const noRunnableConfig = !!systems.length && !runnableSystems.length
   const shownSystemName = conversation ? refLabel(conversation.system_ref) : system
     ? `${system.draft.name} · ${activeVersion?.startsWith('draft:') ? `草稿 r${activeVersion.slice(6)}` : activeVersion ?? '未选择版本'}`
@@ -283,30 +317,38 @@ export default function ChatView() {
     setError('')
   }
 
-  function fillExample(text: string) {
+  function updateQuestion(text: string) {
     setQuestion(text)
     localStorage.setItem(draftKey(conversationId), text)
+  }
+
+  function fillExample(text: string) {
+    updateQuestion(text)
     composer.current?.focus()
   }
 
-  function openCitations(message: ChatMessage) {
+  function openCitations(message: ChatMessage, trigger: HTMLElement, index?: number) {
     readingPosition.current = scroller.current?.scrollTop ?? 0
-    setCitationMessage(message)
+    citationTrigger.current = trigger
+    setCitationSelection({ messageId: message.message_id, index })
   }
 
   function closeCitations() {
-    setCitationMessage(undefined)
+    setCitationSelection(undefined)
     const top = readingPosition.current
-    requestAnimationFrame(() => { if (scroller.current) scroller.current.scrollTop = top })
+    requestAnimationFrame(() => {
+      if (scroller.current) scroller.current.scrollTop = top
+      citationTrigger.current?.focus({ preventScroll: true })
+    })
   }
 
-  function submit() {
-    if (!question.trim() || activeRun || submitting || pending || loading) return
+  function submit(text = question) {
+    if (!text.trim() || activeRun || composerDisabled || submissionRef.current) return
     const frozenSelection = conversation ? { system_id: conversation.system_ref.system_id,
       ...(conversation.system_ref.kind === 'draft' ? { draft_revision: conversation.system_ref.draft_revision } : { system_version: conversation.system_ref.system_version }) } : selection
     if (!frozenSelection) { setError('请先选择一个可运行的系统与版本。'); return }
     const request: PendingChat = { createId: crypto.randomUUID(), requestId: crypto.randomUUID(), conversationId,
-      question: question.trim(), selection: frozenSelection }
+      question: text.trim(), selection: frozenSelection }
     setPending(request); void performSubmit(request, conversationId)
   }
 
@@ -315,6 +357,15 @@ export default function ChatView() {
       localStorage.removeItem(draftKey()); setQuestion(''); setSidebarOpen(false)
       if (conversationId) navigate('/chat'); else { setSystemId(undefined); setVersion(undefined); setError('') }
     }}>新问答</Button>
+    <section className="chat-bound-sources" aria-label="当前知识源">
+      <div className="chat-rail-heading">
+        <h2><BookOpen size={15} aria-hidden="true" />当前知识源</h2>
+        {sourceNames.length ? <span>{sourceNames.length}</span> : null}
+      </div>
+      {sourceNames.length ? <ul>
+        {sourceNames.map(name => <li key={name}><FileText size={15} aria-hidden="true" /><span>{name}</span></li>)}
+      </ul> : <p className="chat-muted">{conversationId || activeSystemId ? '暂无已绑定的资料。' : '选择问答系统后查看绑定资料。'}</p>}
+    </section>
     <h2>最近会话</h2>
     {listError ? <Alert type="error" title={listError} action={<Button size="small" onClick={() => void refreshList()}>重试</Button>} /> : null}
     <nav className="chat-conversations" aria-label="聊天会话">
@@ -330,13 +381,12 @@ export default function ChatView() {
     </nav>
   </div>
 
-  const citationCount = citationMessage?.result?.supporting_evidence?.length ?? 0
-
-  return <main className={`chat-workspace${citationMessage && inlineCitations ? ' has-citations' : ''}`} aria-label="服装企划问答">
+  return <main className="chat-workspace" aria-label="服装企划问答">
     <aside className="chat-sidebar">{sidebar}</aside>
     <section className="chat-main">
       <header className="chat-header">
-        <Button className="chat-mobile-menu" type="text" icon={<MenuOutlined />} aria-label="打开会话列表" onClick={() => setSidebarOpen(true)} />
+        <Button className="chat-mobile-menu" type="text" icon={<PanelLeft size={18} aria-hidden="true" />} aria-label="打开会话列表"
+          aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)} />
         <div className="chat-header-copy">
           <h1>{conversation?.title || '新的问答'}</h1>
           <p>{conversation ? refLabel(conversation.system_ref) : shownSystemName}</p>
@@ -359,9 +409,9 @@ export default function ChatView() {
       }}>
         {loading ? <Skeleton active paragraph={{ rows: 5 }} /> : !messages.length ? <div className="chat-welcome">
           <div className="chat-welcome-copy">
-            <span className="section-kicker">FASHION PLANNING WORKBENCH</span>
-            <h2>从趋势到洗护，问清一处依据</h2>
-            <p>先确认本次固定的系统与资料范围，再围绕 2027 春夏通勤女装连续追问。</p>
+            <span className="chat-welcome-season">2027 春夏 · 通勤女装</span>
+            <h2>从趋势到面料，<br />让企划有据可查。</h2>
+            <p>查风格与配色、比较衬衫面料，或核对洗护条件。</p>
           </div>
 
           {!conversationId ? <section className="chat-scope" aria-label="本次问答范围">
@@ -380,10 +430,6 @@ export default function ChatView() {
                     options={versionOptions} onChange={setVersion} />
                 </label>
               </div>
-              <dl className="chat-scope-meta">
-                <div><dt>资料范围</dt><dd>{sourceNames.join('、') || (activeSystemId ? '系统未绑定资料' : '选择系统后显示资料范围')}</dd></div>
-                <div><dt>协作协议</dt><dd>{snapshot?.protocol?.protocol_name || snapshot?.workflow_spec?.protocol_id || '随系统版本固定'}</dd></div>
-              </dl>
               {selectedDoc?.snapshot.configuration_errors?.length ? <p className="chat-scope-note">这个版本尚不可运行，请到<Link to="/systems">我的系统</Link>完成配置后重新选择。</p> : null}
               {noRunnableConfig ? <p className="chat-scope-note">没有可运行的已发布版本。<Link to="/systems">去我的系统配置</Link></p> : null}
               {runnableSystems.length > 1 && !activeSystemId ? <p className="chat-scope-note">有多套可运行系统，请先选择一套再提问。</p> : null}
@@ -391,17 +437,20 @@ export default function ChatView() {
           </section> : null}
 
           <div className="chat-examples" aria-label="示例问题">
-            <span>可以这样问</span>
+            <h3>从这里开始</h3>
             <div>
-              {EXAMPLES.map(example => <button type="button" key={example.key} onClick={() => fillExample(example.question)}>
-                <strong>{example.title}</strong>
-                <small>{example.hint}</small>
-                <em>{example.question}</em>
+              {EXAMPLES.map((example, index) => <button type="button" key={example.key} disabled={composerDisabled || !!activeRun || (!conversation && !selection)}
+                onClick={() => { updateQuestion(example.question); submit(example.question) }}>
+                <span className="chat-example-meta"><span>{String(index + 1).padStart(2, '0')}</span><small>{example.scene}</small></span>
+                <span className="chat-example-title"><strong>{example.title}</strong><ArrowUpRight size={17} aria-hidden="true" /></span>
+                <span className="chat-example-hint">{example.hint}</span>
               </button>)}
             </div>
           </div>
         </div> : <div className="chat-message-list">{messages.map(message => <MessageBody message={message} key={message.message_id}
-          onDetail={setDetailId} onCitations={openCitations} citationsOpen={citationMessage?.message_id === message.message_id} />)}</div>}
+          onDetail={setDetailId} onCitations={openCitations} citationsOpen={citationMessage?.message_id === message.message_id}
+          activeCitation={citationMessage?.message_id === message.message_id ? citationSelection?.index : undefined}
+          followUps={message === latestMessage ? followUps : []} onFollowUp={fillExample} />)}</div>}
       </div>
 
       <div className="chat-composer-area">
@@ -410,30 +459,40 @@ export default function ChatView() {
         {connection ? <p className="chat-runtime-note" role="status">{connection}</p> : activeRun ? <p className="chat-runtime-note" role="status">{stopping ? '正在停止…' : progress}</p> : null}
         <form className="chat-composer" onSubmit={e => { e.preventDefault(); submit() }}>
           <Input.TextArea ref={composer} variant="borderless" aria-label="聊天消息"
-            placeholder="问趋势、面料或洗护条件，Enter 发送，Shift+Enter 换行"
+            placeholder="提问趋势、面料或洗护条件…"
             value={question} maxLength={2000} autoSize={{ minRows: 1, maxRows: 7 }}
-            disabled={submitting || !!pending || loading || !!conversationId && !conversation}
-            onChange={e => { setQuestion(e.target.value); localStorage.setItem(draftKey(conversationId), e.target.value) }}
+            disabled={composerDisabled}
+            onChange={e => updateQuestion(e.target.value)}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) { e.preventDefault(); submit() }
             }} />
           {activeRun ? <Button type="text" className="chat-composer-send" aria-label="停止回答" icon={<Square size={13} strokeWidth={0} fill="currentColor" />} loading={stopping} onClick={() => {
             setStopping(true); cancelBackgroundRun(activeRun).catch(e => { setError(errorText(e)); setStopping(false) })
-          }} /> : <Button type="text" className={`chat-composer-send${question.trim() ? ' is-ready' : ''}`} htmlType="submit" aria-label="发送消息" icon={<CornerDownLeft size={18} strokeWidth={1.7} />} loading={submitting}
-            disabled={!question.trim() || !!pending || loading || !!conversationId && !conversation || !conversationId && !selection} />}
+          }} /> : <Button type="text" className="chat-composer-send" htmlType="submit" aria-label="发送消息" icon={<ArrowUp size={19} aria-hidden="true" />} loading={submitting}
+            disabled={!question.trim() || composerDisabled || (!conversationId && !selection)} />}
         </form>
-        <p className="chat-composer-hint">知识库回答会附带引用；每轮执行详情均保存在运行历史。</p>
+        <div className="chat-composer-meta">
+          <span><Layers size={13} aria-hidden="true" />{sourceStatus}</span>
+          <span className="chat-keyboard-hint">Enter 发送 · Shift+Enter 换行</span>
+        </div>
       </div>
     </section>
 
-    {citationMessage && inlineCitations ? <aside className="chat-citations" aria-label="引用侧栏">
-      <CitationPanel message={citationMessage} onClose={closeCitations} />
+    {inlineCitations ? <aside className="chat-citations" aria-label="引用侧栏">
+      {citationMessage ? <CitationPanel message={citationMessage} onClose={closeCitations} selection={citationSelection} />
+        : <div className="chat-citations-placeholder">
+          <h2>证据原文</h2>
+          <div>
+            <BookOpen size={24} strokeWidth={1.5} aria-hidden="true" />
+            <p>点击回答中的来源卡片或引用编号，查看对应的原文片段与行号。</p>
+          </div>
+        </div>}
     </aside> : null}
 
-    <Drawer className="chat-rail-drawer" title="聊天会话" placement="left" open={sidebarOpen} onClose={() => setSidebarOpen(false)} size={290}>{sidebar}</Drawer>
-    {citationMessage && !inlineCitations ? <Drawer className="chat-citation-drawer" title="引用" placement="right" open size="min(420px, 100vw)"
-      onClose={closeCitations} afterOpenChange={(open) => { if (!open && scroller.current) scroller.current.scrollTop = readingPosition.current }}>
-      <CitationPanel message={citationMessage} onClose={closeCitations} />
+    <Drawer rootClassName="chat-rail-drawer" title="聊天会话" placement="left" open={sidebarOpen && !desktopSidebar} onClose={() => setSidebarOpen(false)} size="min(320px, 90vw)">{sidebar}</Drawer>
+    {!inlineCitations ? <Drawer rootClassName="chat-citation-drawer" title="证据原文" placement="right" open={!!citationMessage} size="min(420px, 100vw)"
+      onClose={closeCitations}>
+      {citationMessage ? <CitationPanel message={citationMessage} selection={citationSelection} /> : null}
     </Drawer> : null}
     <Drawer title="本轮运行" open={!!detailId} onClose={() => setDetailId(undefined)} size="min(960px, 100vw)">
       {detailError ? <Alert type="error" title={detailError} /> : detail ? <RunDetailPanel detail={detail} /> : <Skeleton active />}

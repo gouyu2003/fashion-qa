@@ -85,22 +85,22 @@ const NODE_META: Record<
   planner_v0: {
     shortName: '规划智能体',
     english: 'PLANNER',
-    color: '#0F625F',
+    color: 'var(--planner)',
     icon: <BranchesOutlined />,
   },
   retriever_v0: {
     shortName: '检索智能体',
     english: 'RETRIEVER',
-    color: '#2A7A5E',
+    color: 'var(--retriever)',
     icon: <SearchOutlined />,
   },
   answer_validator_v0: {
     shortName: '回答与验证智能体',
     english: 'ANSWER · VALIDATOR',
-    color: '#8A6420',
+    color: 'var(--validator)',
     icon: <SafetyCertificateOutlined />,
   },
-  expert_v0: { shortName: '领域专家', english: 'EXPERT', color: '#7355a5', icon: <RobotOutlined /> },
+  expert_v0: { shortName: '领域专家', english: 'EXPERT', color: 'var(--expert)', icon: <RobotOutlined /> },
 }
 
 function nodeMeta(id: string, role?: string, name?: string) {
@@ -456,6 +456,7 @@ export default function App() {
   const navigate = useNavigate()
   const systemsActive = Boolean(useMatch('/systems'))
   const protocolsActive = Boolean(useMatch('/protocols'))
+  const chatActive = Boolean(useMatch('/chat/:conversationId?'))
   const [managedSelection, setManagedSelection] = useState<ManagedSelection>()
   const [system, setSystem] = useState<SystemInfo>()
   const [options, setOptions] = useState<SystemOptions>()
@@ -637,7 +638,7 @@ export default function App() {
   const completedSteps = run.steps.filter((step) => step.status === 'completed').length
 
   return (
-    <div className="app-shell">
+    <div className={chatActive ? 'app-shell app-shell--chat' : 'app-shell'}>
       <header className="app-mobile-bar">
         <button className="sidebar-toggle" type="button" aria-label="打开导航菜单" aria-expanded={sidebarOpen} aria-controls="workspace-navigation" onClick={() => setSidebarOpen(true)}>
           <MenuOutlined />
@@ -809,7 +810,7 @@ export default function App() {
               <strong>{run.activeNode ? nodeMeta(run.activeNode).shortName : '准备开始'}</strong>
               <span>{run.connection || (run.steps.at(-1) ? `已完成 ${completedSteps} 个节点` : '正在建立运行连接')}</span>
             </div>
-            <Progress percent={Math.min(92, 18 + completedSteps * 25)} showInfo={false} strokeColor="#0F625F" railColor="#E7ECEE" />
+            <Progress percent={Math.min(92, 18 + completedSteps * 25)} showInfo={false} strokeColor="var(--accent)" railColor="var(--line)" />
             <Button icon={<StopOutlined />} onClick={handleStop} danger disabled={!run.runId || run.activity?.status === 'cancelling'}>
               {run.activity?.status === 'cancelling' ? '正在停止' : '停止运行'}
             </Button>

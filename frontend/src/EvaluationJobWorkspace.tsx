@@ -76,7 +76,7 @@ export default function EvaluationJobWorkspace({ job, busy, perform, onUpdate, o
         <span>{job.context_mode === 'question_context' ? '每题 context' : '系统固定知识源'}</span>
       </div>
       <div className="evaluation-progress-heading"><span>{active ? '后台评测进行中' : finished === job.progress.planned ? '首次尝试已全部结束' : '首次尝试进度'}</span><small>{finished} / {job.progress.planned} 项</small></div>
-      <Progress percent={progress} showInfo={false} size="small" status={active ? 'active' : 'normal'} strokeColor={job.status === 'completed' ? '#2A7A5E' : '#0F625F'} />
+      <Progress percent={progress} showInfo={false} size="small" status={active ? 'active' : 'normal'} strokeColor={job.status === 'completed' ? 'var(--success)' : 'var(--accent)'} />
       <div className="evaluation-counts"><span>完成 <strong>{job.progress.completed}</strong></span><span>失败 <strong>{job.progress.failed}</strong></span><span>状态不明 <strong>{job.progress.interrupted}</strong></span>
         {!!job.progress.cancelled && <span>取消 <strong>{job.progress.cancelled}</strong></span>}</div>
       <div className="evaluation-detail-actions">

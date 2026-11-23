@@ -40,6 +40,17 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('continuous chat', () => {
+  it('shows the bound snapshot sources and sends a demo question in one click', async () => {
+    show()
+    const sources = screen.getByRole('region', { name: '当前知识源' })
+    expect(await within(sources).findByText('图书馆规则 · v1')).toBeInTheDocument()
+    expect(screen.getByText('已绑定 1 个知识源')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /查本季趋势/ }))
+    await waitFor(() => expect(sendChatMessage).toHaveBeenCalledWith('created',
+      '2027 春夏通勤女装的趋势方向是什么？有哪些风格和配色依据？', expect.any(String)))
+    await screen.findByText('回答 created')
+  })
+
   it('keeps a new chat local and respects IME and Shift+Enter before submitting', async () => {
     show()
     expect(createConversation).not.toHaveBeenCalled()
@@ -134,7 +145,7 @@ describe('continuous chat', () => {
 - **克重** 130 g/m²
 - **洗护条件** 仅手洗，最高 30°C。`
     const assistant: ChatMessage = {
-      ...message('a', '两款府绸都可以做通勤衬衫，但洗护条件不同。'),
+      ...message('a', '两款府绸都可以做通勤衬衫，但洗护条件不同。 [2]，编号示例 `[1]`。'),
       result: {
         verified: true,
         supporting_evidence: [
@@ -147,18 +158,33 @@ describe('continuous chat', () => {
     }
     vi.mocked(getChatMessages).mockResolvedValue({ items: [assistant] })
     show('/chat/a')
-    await screen.findByText('两款府绸都可以做通勤衬衫，但洗护条件不同。')
+    await screen.findByText(/两款府绸都可以做通勤衬衫/)
     expect(screen.getByText('FAB-001')).toBeInTheDocument()
     expect(screen.getByText('FAB-002')).toBeInTheDocument()
     expect(screen.getByText('可机洗')).toBeInTheDocument()
     expect(screen.getByText('仅手洗')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /查看引用/ }))
+    const marker = screen.getByRole('button', { name: /^引用 2：/ })
+    expect(screen.queryByRole('button', { name: /^引用 1：/ })).not.toBeInTheDocument()
+    fireEvent.click(marker)
     const heading = await screen.findByRole('heading', { name: '引用 · 2 条' })
     const panel = within(heading.closest('.citation-panel') as HTMLElement)
     expect(panel.getByText(/本轮保存的支撑证据/)).toBeInTheDocument()
     expect(panel.getAllByText('02-模拟面料卡-FAB-001.md', { exact: false }).length).toBeGreaterThan(0)
     expect(panel.getByText(/版本 1 · 02-模拟面料卡-FAB-001\.md · 第 1–9 行/)).toBeInTheDocument()
     expect(panel.getByText('65% 棉、35% 聚酯纤维')).toBeInTheDocument()
+    const second = panel.getAllByRole('listitem')[1]
+    expect(second).toHaveClass('is-highlighted')
+
+    const drawer = screen.getByRole('dialog', { name: '证据原文' })
+    fireEvent.click(within(drawer).getByRole('button', { name: /close|关闭/i }))
+    fireEvent.click(screen.getByRole('button', { name: /跳转到来源 1/ }))
+    const reopened = within(await screen.findByRole('region', { name: '引用 · 2 条' }))
+    expect(reopened.getAllByRole('listitem')[0]).toHaveClass('is-highlighted')
+    expect(reopened.getAllByRole('listitem')[1]).not.toHaveClass('is-highlighted')
+    fireEvent.click(within(screen.getByRole('dialog', { name: '证据原文' })).getByRole('button', { name: /close|关闭/i }))
+    fireEvent.click(screen.getByRole('button', { name: '核对洗护条件' }))
+    expect(screen.getByRole('textbox', { name: '聊天消息' })).toHaveValue('刚才比较的面料中，哪些可以机洗？哪些只能手洗，或者仍需供应商确认？')
+    expect(sendChatMessage).not.toHaveBeenCalled()
   })
 })

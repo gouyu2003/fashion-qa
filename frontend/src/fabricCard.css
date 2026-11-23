@@ -1,42 +1,80 @@
-.fabric-comparison { display: grid; gap: 10px; min-width: 0; }
-.fabric-comparison-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.fabric-comparison-head strong { font-size: 13px; font-weight: 600; }
-.fabric-comparison-head span { color: var(--muted); font-size: 11px; }
-
-.fabric-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: stretch; }
-.fabric-grid[data-count='2'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.fabric-grid[data-count='3'] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-
-.fabric-card {
-  min-width: 0;
+.fabric-comparison {
   display: grid;
   gap: 10px;
-  align-content: start;
-  padding: 14px;
+  container: fabric-comparison / inline-size;
+}
+.fabric-comparison-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 2px 10px; }
+.fabric-comparison-head strong { font: 600 18px/1.4 var(--font-editorial); }
+.fabric-comparison-head span { color: var(--muted); font-size: 11px; }
+.fabric-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@container fabric-comparison (min-width: 430px) {
+  .fabric-grid[data-count='2'], .fabric-grid[data-count='3'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container fabric-comparison (min-width: 565px) {
+  .fabric-grid[data-count='3'] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.fabric-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 12px;
 }
-.fabric-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.fabric-card-head > div { display: grid; gap: 2px; min-width: 0; }
-.fabric-card-head strong { font-size: 14px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
-.fabric-code { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; color: var(--primary); }
-.fabric-simulated.ant-tag { margin: 0; flex: 0 0 auto; color: #8a6a3a; background: #f6efe3; border: 1px solid #e8dcc6; font-size: 10px; }
-
-.fabric-specs { display: grid; gap: 1px; margin: 0; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.fabric-specs > div { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 8px; padding: 7px 10px; background: var(--panel); }
-.fabric-specs dt { color: var(--muted); font-size: 11px; line-height: 1.7; }
-.fabric-specs dd { margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.fabric-swatch { width: 14px; height: 14px; flex: 0 0 14px; border-radius: 50%; border: 1px solid rgba(32, 51, 66, 0.2); }
-.fabric-swatch.is-placeholder { background: repeating-linear-gradient(45deg, #e7ebec, #e7ebec 3px, #f5f7f8 3px, #f5f7f8 6px); border-style: dashed; }
-.fabric-care dd > span { color: var(--muted); }
-.fabric-care-tag.ant-tag { margin: 0; font-size: 11px; }
-.fabric-care-tag.is-ok.ant-tag { color: #2a7a5e; background: #e8f2ec; border-color: #cfe4d8; }
-.fabric-care-tag.is-warn.ant-tag { color: #8a6420; background: #f6efe1; border-color: #e8dcc6; }
-.fabric-care-tag.is-pending.ant-tag { color: #5b6b77; background: #eef2f3; border-color: #dde4e6; }
-.fabric-extra { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
-.fabric-source { color: var(--muted); font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
-
-@media (max-width: 720px) {
-  .fabric-grid, .fabric-grid[data-count='2'], .fabric-grid[data-count='3'] { grid-template-columns: minmax(0, 1fr); }
+.fabric-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 100px;
+  padding: 9px;
+  border-bottom: 1px solid var(--line);
+  background-color: var(--fabric-swatch, #eae4da);
+  background-image:
+    linear-gradient(145deg, #ffffff33, #382b1e0d),
+    repeating-linear-gradient(0deg, #ffffff35 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, #34281c1f 0 1px, transparent 1px 3px);
 }
+.fabric-swatch.is-placeholder {
+  background-image: repeating-linear-gradient(135deg, #6e6a6314 0 1px, transparent 1px 6px);
+}
+.fabric-swatch-badges { display: flex; align-self: flex-end; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.fabric-code, .fabric-simulated, .fabric-swatch-label {
+  padding: 2px 7px;
+  color: #3a2f25;
+  background: #fffaf3;
+  border: 1px solid #6e6a6329;
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.fabric-code { font-family: var(--font-mono); font-weight: 700; letter-spacing: .02em; }
+.fabric-simulated { color: #684f35; background: #fbefdf; }
+.fabric-swatch-label { font-size: 11px; }
+.fabric-details { display: flex; flex: 1; flex-direction: column; gap: 11px; padding: 12px; overflow-wrap: anywhere; }
+.fabric-name { font: 600 19px/1.4 var(--font-editorial); }
+.fabric-specs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin: 0; }
+.fabric-composition { grid-column: 1 / -1; }
+.fabric-specs dt { color: var(--muted); font-size: 11px; }
+.fabric-specs dd { margin: 0; font-size: 13px; font-weight: 550; line-height: 1.5; }
+.fabric-details .fabric-extra { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.fabric-care {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding: 8px;
+  background: var(--success-soft);
+  border: 1px solid var(--success-line);
+  border-radius: 8px;
+  color: var(--success);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.fabric-care strong { display: flex; align-items: center; gap: 6px; }
+.fabric-care svg { flex: none; }
+.fabric-care.is-hand { background: var(--warning-soft); border-color: var(--warning-line); color: var(--warning); }
+.fabric-care.is-pending { background: #f6f3ee; border: 1px dashed #b9ae9d; color: #5a5044; }
+.fabric-source { color: var(--muted); font-size: 11px; line-height: 1.55; }
