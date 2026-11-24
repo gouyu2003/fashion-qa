@@ -17,7 +17,7 @@ import httpx
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--base-url', default='http://127.0.0.1:8000')
+    parser.add_argument('--base-url', default='http://127.0.0.1:8100')
     parser.add_argument('--output', type=Path, default=Path('.pytest-live-stage42/api-results.json'))
     parser.add_argument('--allow-model-calls', action='store_true', required=True)
     parser.add_argument('--name-suffix', default='')
