@@ -1,6 +1,5 @@
 .chat-workspace {
-  height: calc(100dvh - var(--chat-topbar-height, 0px));
-  min-height: 380px;
+  height: 100dvh;
   display: grid;
   grid-template-columns: clamp(206px, 17vw, 244px) minmax(0, 1fr);
   background: var(--canvas);

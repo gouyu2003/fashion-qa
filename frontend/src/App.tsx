@@ -38,6 +38,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd'
+import type { TooltipProps } from 'antd'
 import type { ReactNode } from 'react'
 import { getSystemInfo, getSystemOptions, streamQuestion, getPendingRun, resumeBackgroundRun, cancelBackgroundRun, getRunDetail } from './api'
 import HistoryView from './HistoryView'
@@ -75,6 +76,53 @@ import type {
 const { TextArea } = Input
 const { Paragraph, Text, Title } = Typography
 const ChatView = lazy(() => import('./ChatView'))
+
+const DESKTOP_RAIL_QUERY = '(min-width: 1025px)'
+const BRAND_NAME = '服装企划问答 · 趋势 · 面料 · 洗护核对'
+const RAIL_TOOLTIP_PROPS = {
+  placement: 'right',
+  trigger: ['hover', 'focus'],
+  mouseEnterDelay: 0.08,
+  arrow: false,
+  destroyOnHidden: true,
+  styles: {
+    root: { maxWidth: 360 },
+    container: {
+      background: 'var(--ink)',
+      color: '#fff',
+      borderRadius: 999,
+      boxShadow: 'none',
+      padding: '6px 14px',
+      textAlign: 'center',
+      overflowWrap: 'anywhere',
+    },
+  },
+} satisfies TooltipProps
+
+const NAV_GROUPS = [
+  {
+    label: undefined,
+    links: [
+      { to: '/chat', label: '问答', icon: <MessageOutlined />, end: false },
+      { to: '/knowledge', label: '资料库', icon: <DatabaseOutlined />, end: false },
+    ],
+  },
+  {
+    label: '运行与分析',
+    links: [
+      { to: '/run', label: '实时运行', icon: <PlayCircleFilled />, end: true },
+      { to: '/history', label: '运行历史', icon: <HistoryOutlined />, end: true },
+      { to: '/evaluations', label: '批量评测', icon: <FileSearchOutlined />, end: true },
+    ],
+  },
+  {
+    label: '配置',
+    links: [
+      { to: '/systems', label: '我的系统', icon: <ApartmentOutlined />, end: true },
+      { to: '/protocols', label: '协作协议', icon: <WorkflowOutlined />, end: true },
+    ],
+  },
+]
 
 const NODE_ORDER: NodeId[] = ['planner_v0', 'retriever_v0', 'answer_validator_v0']
 
@@ -453,10 +501,10 @@ function ResultPanel({ result, durationMs, source }: { result?: RunResult; durat
 
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [desktopRail, setDesktopRail] = useState(() => window.matchMedia(DESKTOP_RAIL_QUERY).matches)
   const navigate = useNavigate()
   const systemsActive = Boolean(useMatch('/systems'))
   const protocolsActive = Boolean(useMatch('/protocols'))
-  const chatActive = Boolean(useMatch('/chat/:conversationId?'))
   const [managedSelection, setManagedSelection] = useState<ManagedSelection>()
   const [system, setSystem] = useState<SystemInfo>()
   const [options, setOptions] = useState<SystemOptions>()
@@ -471,6 +519,17 @@ export default function App() {
   const [run, dispatch] = useReducer(runReducer, initialRunState)
   const abortRef = useRef<AbortController | undefined>(undefined)
   const restoredSubmission = useRef(getPendingRun())
+
+  useEffect(() => {
+    const media = window.matchMedia(DESKTOP_RAIL_QUERY)
+    const update = () => {
+      setDesktopRail(media.matches)
+      if (media.matches) setSidebarOpen(false)
+    }
+    update()
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
 
   useEffect(() => {
     const pending = restoredSubmission.current
@@ -636,64 +695,65 @@ export default function App() {
 
   const isRunning = run.status === 'running'
   const completedSteps = run.steps.filter((step) => step.status === 'completed').length
+  const serviceStatus = systemError ? 'error' : options ? 'success' : 'processing'
+  const serviceLabel = systemError ? '配置不可用' : options ? '服务正常' : '正在连接'
+  const workflowLabel = shownWorkflow?.workflow_id ?? '等待配置'
+  const modelNames = managedSelection ? selectedModels.join('、') || '本地检索' : system?.model_name ?? 'DeepSeek · Bailian'
+  const modelTag = managedSelection && selectedModels.length > 1 ? '多个模型' : modelNames
+  const railTooltipProps = { ...RAIL_TOOLTIP_PROPS, disabled: !desktopRail }
+  const closeSidebar = () => setSidebarOpen(false)
 
   return (
-    <div className={chatActive ? 'app-shell app-shell--chat' : 'app-shell'}>
+    <div className="app-shell">
       <header className="app-mobile-bar">
         <button className="sidebar-toggle" type="button" aria-label="打开导航菜单" aria-expanded={sidebarOpen} aria-controls="workspace-navigation" onClick={() => setSidebarOpen(true)}>
           <MenuOutlined />
         </button>
         <div className="app-mobile-brand"><strong>服装企划问答工作台</strong></div>
-        <Badge status={systemError ? 'error' : options ? 'success' : 'processing'} text={systemError ? '配置异常' : options ? '在线' : '连接中'} />
+        <Badge status={serviceStatus} text={systemError ? '配置异常' : options ? '在线' : '连接中'} />
       </header>
 
       <aside className="app-sidebar" data-open={sidebarOpen}>
-        <div className="brand-lockup">
-          <div className="brand-mark">
-            <BotMessageSquareOutlined />
+        <Tooltip {...railTooltipProps} title={BRAND_NAME}>
+          <div className="brand-lockup" tabIndex={desktopRail ? 0 : undefined} role={desktopRail ? 'img' : undefined} aria-label={desktopRail ? BRAND_NAME : undefined}>
+            <div className="brand-mark">
+              <BotMessageSquareOutlined />
+            </div>
+            <div className="brand-copy">
+              <strong>服装企划问答</strong>
+              <span>趋势 · 面料 · 洗护核对</span>
+            </div>
           </div>
-          <div>
-            <strong>服装企划问答</strong>
-            <span>趋势 · 面料 · 洗护核对</span>
-          </div>
-        </div>
-        <button className="sidebar-toggle" type="button" aria-label="关闭导航菜单" aria-expanded={sidebarOpen} aria-controls="workspace-navigation" onClick={() => setSidebarOpen(false)}>
+        </Tooltip>
+        <button className="sidebar-toggle" type="button" aria-label="关闭导航菜单" aria-expanded={sidebarOpen} aria-controls="workspace-navigation" onClick={closeSidebar}>
           <MenuOutlined />
         </button>
         <nav id="workspace-navigation" className="workspace-nav" aria-label="工作区视图">
-          <div className="nav-primary">
-            <NavLink to="/chat" onClick={() => setSidebarOpen(false)}>
-              <span className="nav-icon nav-icon-chat"><MessageOutlined /></span> 问答
-            </NavLink>
-            <NavLink to="/knowledge" onClick={() => setSidebarOpen(false)}>
-              <span className="nav-icon nav-icon-knowledge"><DatabaseOutlined /></span> 资料库
-            </NavLink>
-          </div>
-          <span className="nav-group-label">运行与分析</span>
-          <NavLink to="/run" end onClick={() => setSidebarOpen(false)}>
-            <span className="nav-icon nav-icon-run"><PlayCircleFilled /></span> 实时运行
-          </NavLink>
-          <NavLink to="/history" end onClick={() => setSidebarOpen(false)}>
-            <span className="nav-icon nav-icon-history"><HistoryOutlined /></span> 运行历史
-          </NavLink>
-          <NavLink to="/evaluations" end onClick={() => setSidebarOpen(false)}>
-            <span className="nav-icon nav-icon-history"><FileSearchOutlined /></span> 批量评测
-          </NavLink>
-          <span className="nav-group-label">配置</span>
-          <NavLink to="/systems" end onClick={() => setSidebarOpen(false)}>
-            <span className="nav-icon nav-icon-systems"><ApartmentOutlined /></span> 我的系统
-          </NavLink>
-          <NavLink to="/protocols" end onClick={() => setSidebarOpen(false)}>
-            <span className="nav-icon nav-icon-protocols"><WorkflowOutlined /></span> 协作协议
-          </NavLink>
+          {NAV_GROUPS.map(({ label, links }) => (
+            <div className="nav-group" key={links[0].to}>
+              {label && <span className="nav-group-label">{label}</span>}
+              {links.map(({ to, label, icon, end }) => (
+                <Tooltip key={to} {...railTooltipProps} title={label}>
+                  <NavLink to={to} end={end} aria-label={label} onClick={closeSidebar}>
+                    <span className="nav-icon" aria-hidden="true">{icon}</span>
+                    <span className="nav-label">{label}</span>
+                  </NavLink>
+                </Tooltip>
+              ))}
+            </div>
+          ))}
         </nav>
         <div className="system-badges">
-          <Tag variant="filled">{shownWorkflow?.workflow_id ?? '等待配置'}</Tag>
-          <Tag variant="filled">{managedSelection ? (selectedModels.length > 1 ? '多个模型' : selectedModels[0] ?? '本地检索') : system?.model_name ?? 'DeepSeek · Bailian'}</Tag>
-          <Badge status={systemError ? 'error' : options ? 'success' : 'processing'} text={systemError ? '配置不可用' : options ? '服务正常' : '正在连接'} />
+          <Tag variant="filled">{workflowLabel}</Tag>
+          <Tag variant="filled">{modelTag}</Tag>
+          <Tooltip {...railTooltipProps} title={`${serviceLabel} · ${shownWorkflow?.name ?? workflowLabel} · ${modelNames}`}>
+            <div className="system-status" tabIndex={desktopRail ? 0 : undefined} role={desktopRail ? 'group' : undefined} aria-label={desktopRail ? serviceLabel : undefined}>
+              <Badge status={serviceStatus} text={serviceLabel} />
+            </div>
+          </Tooltip>
         </div>
       </aside>
-      {sidebarOpen ? <button type="button" className="app-nav-scrim" aria-label="关闭导航菜单" onClick={() => setSidebarOpen(false)} /> : null}
+      {sidebarOpen ? <button type="button" className="app-nav-scrim" aria-label="关闭导航菜单" onClick={closeSidebar} /> : null}
 
       <div className="app-content">
       {/* Keep both editors mounted so navigation preserves their unsaved drafts. */}
